@@ -2,21 +2,44 @@
 
 一个为 Orca 笔记应用设计的页面空间显示插件，提供直观的页面导航和空间管理功能。
 
-## 主要功能
+![PixPin_2025-09-15_12-38-14](https://github.com/user-attachments/assets/8d24d58f-1446-49f7-aec8-bebb5f42d030)
 
-- **页面空间显示** - 在侧边栏显示当前页面的子页面和引用关系
-- **图标切换** - 支持显示/隐藏页面图标
-- **多行显示** - 支持多行布局显示页面列表
-- **多列显示** - 支持多列布局优化空间利用
-- **实时更新** - 自动监听页面变化并更新显示
-- **调试模式** - 提供调试功能便于问题排查
 
-## 安装
+# 使用
+在右侧 [Releases](https://github.com/SaXz2/orca-page-display-plugins/releases) 选择最新版本下载
 
-1. 将插件文件放置在 Orca 的插件目录中
-2. 在 Orca 中启用插件
+插件结构目录
 
-## 使用方法
+```
+orca/
+└── plugins/
+    └── orca-tabs-plugin-1.0.0/
+        ├── dist/
+        ├── icon.png
+        ├── LICENSE
+        ├── package.json
+        └── README.md
+```
+
+插件放置到对应位置以后需要重启 Orca Note
+
+# 功能说明
+
+## 为不同块设置了不同的块类型图标
+
+![PixPin_2025-09-15_12-42-32](https://github.com/user-attachments/assets/62a82280-8a49-4ead-a8f7-a96682ac4e27)
+
+## 底部查询别名块隐藏
+
+![PixPin_2025-09-15_12-44-49](https://github.com/user-attachments/assets/b11dea6c-4f46-4902-be92-0edc3a393c34)
+
+## 全局搜索（支持 全属性、全别名、全属性项 ）
+
+https://github.com/user-attachments/assets/38857dc9-7133-48ae-9c61-731956cfd426
+
+
+
+## 命令菜单
 
 插件加载后会自动在侧边栏显示页面空间信息。您可以使用以下命令：
 
@@ -27,27 +50,3 @@
 - `调试页面空间状态` - 查看当前状态信息
 - `切换调试模式` - 开启/关闭调试模式
 
-## 技术特性
-
-- 基于 React 和 TypeScript 开发
-- 使用 Valtio 进行状态管理
-- 支持多面板环境
-- 防抖更新机制
-- API 缓存优化
-
-## 版本
-
-当前版本：1.0.0
-
-## 开发
-
-```bash
-# 安装依赖
-npm install
-
-# 开发模式
-npm run dev
-
-# 构建
-npm run build
-```
