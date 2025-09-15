@@ -1,0 +1,53 @@
+name: 发布 Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建项目
+        run: npm run build
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/index.js
+            README.md
+            package.json
+          generate_release_notes: true
+          body: |
+            ## 📦 发布内容
+            
+            - 构建产物：`dist/index.js`
+            - 项目文档：`README.md`
+            - 包信息：`package.json`
+            
+            ## 🚀 安装使用
+            
+            1. 下载 `dist/index.js` 文件
+            2. 在 Orca 中加载插件
+            3. 享受页面显示功能！
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

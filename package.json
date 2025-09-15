@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "cross-env NODE_ENV=production tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "release:patch": "npm version patch && git push origin --tags",
+    "release:minor": "npm version minor && git push origin --tags",
+    "release:major": "npm version major && git push origin --tags",
+    "release:pre": "npm version prerelease && git push origin --tags"
   },
   "peerDependencies": {
     "react": "^18.2.0",
