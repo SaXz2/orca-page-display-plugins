@@ -29,25 +29,45 @@ jobs:
       - name: 构建项目
         run: npm run build
 
+      - name: 创建插件包目录
+        run: |
+          PLUGIN_NAME="orca-page-display-plugin"
+          VERSION=${GITHUB_REF#refs/tags/v}
+          PLUGIN_DIR="${PLUGIN_NAME}-${VERSION}"
+          mkdir -p "$PLUGIN_DIR"
+          
+          # 复制核心文件
+          cp -r dist "$PLUGIN_DIR/"
+          cp icon.png "$PLUGIN_DIR/"
+          cp package.json "$PLUGIN_DIR/"
+          cp README.md "$PLUGIN_DIR/"
+          cp LICENSE "$PLUGIN_DIR/"
+          
+          # 创建 zip 包
+          zip -r "${PLUGIN_DIR}.zip" "$PLUGIN_DIR"
+          
+          echo "PLUGIN_DIR=$PLUGIN_DIR" >> $GITHUB_ENV
+          echo "PLUGIN_ZIP=${PLUGIN_DIR}.zip" >> $GITHUB_ENV
+
       - name: 创建 Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist/index.js
-            README.md
-            package.json
+            ${{ env.PLUGIN_ZIP }}
           generate_release_notes: true
           body: |
-            ## 📦 发布内容
+            ## 📦 插件包内容
             
-            - 构建产物：`dist/index.js`
-            - 项目文档：`README.md`
-            - 包信息：`package.json`
+            - `dist/index.js` - 编译后的插件文件
+            - `icon.png` - 插件图标
+            - `package.json` - 项目配置
+            - `README.md` - 使用文档
+            - `LICENSE` - 许可证
             
             ## 🚀 安装使用
             
-            1. 下载 `dist/index.js` 文件
-            2. 在 Orca 中加载插件
-            3. 享受页面显示功能！
+            1. 下载 `${{ env.PLUGIN_ZIP }}` 文件
+            2. 解压到 Orca 的插件目录
+            3. 在 Orca 中启用插件
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

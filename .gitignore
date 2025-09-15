@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Plugin documentation (excluded from repository)
+plugin-docs/
