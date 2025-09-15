@@ -1,0 +1,27 @@
+{
+  "name": "orca-page-display-plugin",
+  "version": "1.0.0",
+  "description": "Orca 页面显示插件 - 支持页面空间显示、图标切换、多行多列显示等功能",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "cross-env NODE_ENV=production tsc && vite build",
+    "preview": "vite preview"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0",
+    "valtio": "^1.13.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react-swc": "^3.5.0",
+    "cross-env": "^7.0.3",
+    "rollup-plugin-external-globals": "^0.9.2",
+    "typescript": "^5.2.2",
+    "vite": "^5.2.0"
+  },
+  "dependencies": {
+    "date-fns": "^4.1.0"
+  }
+}
