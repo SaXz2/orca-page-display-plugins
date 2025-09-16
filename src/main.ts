@@ -85,34 +85,24 @@ export async function load(_name: string) {
   }, "切换页面空间多列显示");
 
 
-  // 添加手动刷新命令
+  // 添加手动刷新命令（强制刷新并重新添加元素）
   orca.commands.registerCommand(`${pluginName}.refreshDisplay`, () => {
     if (pageDisplay) {
-      pageDisplay.forceUpdate();
-      orca.notify("info", "页面空间显示已刷新");
+      pageDisplay.forceRefreshAndReinit();
+      orca.notify("info", "页面空间显示已强制刷新并重新添加元素");
     }
   }, "刷新页面空间显示");
 
-  // 添加调试状态命令
-  orca.commands.registerCommand(`${pluginName}.debugStatus`, () => {
-    if (pageDisplay) {
-      const status = pageDisplay.getDisplayStatus();
-      console.log("PageDisplay Debug Status:", status);
-      orca.notify("info", `显示状态: 初始化=${status.isInitialized}, 显示中=${status.isDisplaying}, 应该显示=${status.shouldDisplay}`);
-    }
-  }, "调试页面空间状态");
-
-
   console.log(`${pluginName} loaded.`);
-  
-  // 添加性能监控命令
-  orca.commands.registerCommand(`${pluginName}.toggleDebug`, () => {
+
+  // 添加反链别名块查询切换命令
+  orca.commands.registerCommand(`${pluginName}.toggleBackrefAliasQuery`, () => {
     if (pageDisplay) {
-      pageDisplay.toggleDebugMode();
-      const status = pageDisplay.getDebugMode() ? "启用" : "禁用";
-      orca.notify("info", `调试模式已${status}`);
+      pageDisplay.toggleBackrefAliasQuery();
+      const status = pageDisplay.getBackrefAliasQueryEnabled() ? "启用" : "禁用";
+      orca.notify("info", `反链别名块查询已${status}`);
     }
-  }, "切换调试模式");
+  }, "切换反链别名块查询");
 }
 
 export async function unload() {

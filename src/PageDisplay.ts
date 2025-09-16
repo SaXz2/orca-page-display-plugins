@@ -1,69 +1,316 @@
 import type { Block, DbId, BlockRef } from "./orca.d.ts"
 import { t } from "./libs/l10n"
 
-interface PageDisplayItem {
-  id: DbId
-  text: string
-  aliases: string[]
-  isPage: boolean
-  parentBlock?: Block
-  _hide?: boolean
-  _icon?: string
-  itemType: 'tag' | 'referenced' | 'referencing-alias' | 'child-referenced-alias'
-  // 搜索相关字段
-  searchableText?: string  // 包含所有可搜索文本
-  searchableData?: {
-    text: string[]
-    properties: string[]
-    blockrefs: string[]
-    tags: string[]
+/**
+ * 错误处理器类
+ * 负责统一处理各种错误情况，包括重试逻辑和用户通知
+ */
+class ErrorHandler {
+  private maxRetries: number = 3
+  private retryDelay: number = 1000
+  private logger: Logger
+
+  constructor(logger: Logger, maxRetries: number = 3) {
+    this.logger = logger
+    this.maxRetries = maxRetries
+  }
+
+  /**
+   * 执行带重试的操作
+   */
+  async executeWithRetry<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    retryCount: number = 0
+  ): Promise<T | null> {
+    try {
+      return await operation()
+    } catch (error) {
+      this.logger.error(`${operationName} failed (attempt ${retryCount + 1}/${this.maxRetries}):`, error)
+      
+      if (retryCount < this.maxRetries - 1) {
+        // 延迟重试
+        await this.delay(this.retryDelay * (retryCount + 1))
+        return this.executeWithRetry(operation, operationName, retryCount + 1)
+      } else {
+        this.logger.error(`${operationName} failed after ${this.maxRetries} attempts`)
+        return null
+      }
+    }
+  }
+
+  /**
+   * 处理显示错误
+   */
+  handleDisplayError(error: any, retryCount: number, maxRetries: number, onRetry: () => void) {
+    this.logger.warn(`Display error (attempt ${retryCount}/${maxRetries}):`, error)
+    
+    if (retryCount < maxRetries) {
+      // 延迟重试
+      setTimeout(() => {
+        this.logger.debug("Retrying display creation...")
+        onRetry()
+      }, this.retryDelay * retryCount)
+    } else {
+      this.logger.error("Max retries reached, giving up")
+      orca.notify("error", "页面空间显示失败，请尝试手动刷新")
+    }
+  }
+
+  /**
+   * 处理API错误
+   */
+  handleApiError(error: any, apiName: string): void {
+    this.logger.error(`API ${apiName} failed:`, error)
+  }
+
+  /**
+   * 延迟执行
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms))
+  }
+
+  /**
+   * 设置最大重试次数
+   */
+  setMaxRetries(maxRetries: number) {
+    this.maxRetries = maxRetries
+  }
+
+  /**
+   * 设置重试延迟
+   */
+  setRetryDelay(delay: number) {
+    this.retryDelay = delay
   }
 }
 
-export class PageDisplay {
-  private containers: Map<string, HTMLElement> = new Map() // 支持多面板，key为面板标识
-  private queryListToggleButtons: Map<string, HTMLElement> = new Map() // 支持多面板的按钮
-  private pluginName: string
-  private observer: MutationObserver | null = null
-  private showIcons: boolean = true // 控制是否显示图标
-  private isCollapsed: boolean = false // 控制折叠状态，默认展开
-  private multiLine: boolean = false // 控制是否多行显示
-  private multiColumn: boolean = false // 控制是否多列显示
-  private lastRootBlockId: DbId | null = null // 缓存上次的根块ID
-  private queryListHidden: boolean = false // 控制查询列表是否隐藏
-  private updateTimeout: number | null = null // 防抖定时器
-  private periodicCheckInterval: number | null = null // 定期检查定时器
-  private retryCount: number = 0 // 重试计数
-  private maxRetries: number = 3 // 最大重试次数
-  private isInitialized: boolean = false // 初始化状态
-  private debugMode: boolean = false // 调试模式
-  private apiCache: Map<string, { data: any; timestamp: number }> = new Map() // API缓存
-  private cacheTimeout: number = 30000 // 缓存超时时间（30秒）
+/**
+ * API服务类
+ * 负责管理所有与Orca后端的API调用，包括缓存、错误处理和重试逻辑
+ */
+class ApiService {
+  private cache: Map<string, { data: any; timestamp: number }> = new Map()
+  private cacheTimeout: number = 30000 // 30秒
+  private logger: Logger
 
-  constructor(pluginName: string) {
-    this.pluginName = pluginName
-    this.loadSettings()
-    // 临时开启调试模式用于诊断子块引用问题
-    this.debugMode = true
+  constructor(logger: Logger) {
+    this.logger = logger
+  }
+
+  /**
+   * 带缓存的API调用
+   */
+  async call(apiType: string, ...args: any[]): Promise<any> {
+    const cacheKey = `${apiType}:${JSON.stringify(args)}`
+    const now = Date.now()
     
-    // 动态加载CSS文件
-    this.loadCSS()
+    // 检查缓存
+    if (this.cache.has(cacheKey)) {
+      const cached = this.cache.get(cacheKey)!
+      if (now - cached.timestamp < this.cacheTimeout) {
+        this.logger.debug(`Using cached result for ${apiType}`)
+        return cached.data
+      } else {
+        // 缓存过期，删除
+        this.cache.delete(cacheKey)
+      }
+    }
+    
+    // 调用API
+    const result = await orca.invokeBackend(apiType, ...args)
+    
+    // 缓存结果
+    this.cache.set(cacheKey, {
+      data: result,
+      timestamp: now
+    })
+    
+    // 清理过期缓存
+    this.cleanExpiredCache()
+    
+    return result
   }
 
-  // 动态加载CSS文件
-  private loadCSS() {
-    // 检查是否已经加载过CSS
-    if (document.querySelector('#page-display-styles')) {
-      return
+  /**
+   * 清理过期缓存
+   */
+  private cleanExpiredCache() {
+    const now = Date.now()
+    for (const [key, value] of this.cache.entries()) {
+      if (now - value.timestamp >= this.cacheTimeout) {
+        this.cache.delete(key)
+      }
     }
- 
-    // 不再需要外部CSS文件，所有样式都由JavaScript处理
-    console.log('PageDisplay: All styles handled by JavaScript - no external CSS needed')
   }
-  
-  // 应用样式类到元素
-  private applyStyles(element: HTMLElement, className: string) {
-    // 移除所有可能的样式类
+
+  /**
+   * 获取块信息
+   */
+  async getBlock(blockId: DbId): Promise<Block | null> {
+    try {
+      return await this.call("get-block", blockId)
+    } catch (error) {
+      this.logger.error("Failed to get block info:", error)
+      return null
+    }
+  }
+
+  /**
+   * 批量获取块信息
+   */
+  async getBlocks(blockIds: DbId[]): Promise<Block[]> {
+    try {
+      return await this.call("get-blocks", blockIds) || []
+    } catch (error) {
+      this.logger.error("Failed to get blocks:", error)
+      return []
+    }
+  }
+
+  /**
+   * 获取子标签
+   */
+  async getChildrenTags(blockId: DbId): Promise<Block[]> {
+    try {
+      return await this.call("get-children-tags", blockId) || []
+    } catch (error) {
+      this.logger.error("Failed to get children tags:", error)
+      return []
+    }
+  }
+
+  /**
+   * 获取子标签块
+   */
+  async getChildrenTagBlocks(blockId: DbId): Promise<Block[]> {
+    try {
+      return await this.call("get-children-tag-blocks", blockId) || []
+    } catch (error) {
+      this.logger.error("Failed to get children tag blocks:", error)
+      return []
+    }
+  }
+
+  /**
+   * 通过别名获取块ID
+   */
+  async getBlockIdByAlias(alias: string): Promise<{ id: DbId } | null> {
+    try {
+      return await this.call("get-blockid-by-alias", alias)
+    } catch (error) {
+      this.logger.error(`Failed to get block ID by alias "${alias}":`, error)
+      return null
+    }
+  }
+
+  /**
+   * 清除所有缓存
+   */
+  clearCache() {
+    this.cache.clear()
+  }
+
+  /**
+   * 设置缓存超时时间
+   */
+  setCacheTimeout(timeout: number) {
+    this.cacheTimeout = timeout
+  }
+}
+
+/**
+ * 日志管理器类
+ * 负责管理页面显示插件的所有日志记录
+ */
+class Logger {
+  private debugMode: boolean = false
+  private pluginName: string = 'PageDisplay'
+
+  constructor(debugMode: boolean = false) {
+    this.debugMode = debugMode
+  }
+
+  setDebugMode(debugMode: boolean) {
+    this.debugMode = debugMode
+  }
+
+  /**
+   * 调试日志（仅在调试模式下输出）
+   */
+  debug(...args: any[]) {
+    if (this.debugMode) {
+      console.log(`[${this.pluginName}]`, ...args)
+    }
+  }
+
+  /**
+   * 信息日志（总是输出）
+   */
+  info(...args: any[]) {
+    console.log(`[${this.pluginName}]`, ...args)
+  }
+
+  /**
+   * 警告日志（总是输出）
+   */
+  warn(...args: any[]) {
+    console.warn(`[${this.pluginName}]`, ...args)
+  }
+
+  /**
+   * 错误日志（总是输出）
+   */
+  error(...args: any[]) {
+    console.error(`[${this.pluginName}]`, ...args)
+  }
+
+  /**
+   * 性能日志（仅在调试模式下输出）
+   */
+  performance(message: string, startTime: number) {
+    if (this.debugMode) {
+      const duration = Date.now() - startTime
+      console.log(`[${this.pluginName}] ⏱️ ${message}: ${duration}ms`)
+    }
+  }
+}
+
+/**
+ * 样式管理器类
+ * 负责管理页面显示插件的所有样式相关逻辑
+ */
+class StyleManager {
+  /**
+   * 检测当前是否为暗色模式
+   */
+  private isDarkMode(): boolean {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+  }
+
+  /**
+   * 获取统一的颜色规范
+   */
+  private getColors() {
+    const isDarkMode = this.isDarkMode()
+    return {
+      text: isDarkMode ? '#e8e8e8' : '#333333',
+      textSecondary: isDarkMode ? '#b8b8b8' : '#666666',
+      textMuted: isDarkMode ? '#888888' : '#999999',
+      border: isDarkMode ? '#3a3a3a' : '#e0e0e0',
+      background: isDarkMode ? '#1e1e1e' : '#ffffff',
+      backgroundHover: isDarkMode ? '#2d2d2d' : '#f5f5f5',
+      backgroundSubtle: isDarkMode ? '#252525' : '#fafafa'
+    }
+  }
+
+  /**
+   * 应用样式类到元素
+   * 先清理旧的样式类，再添加新的样式类并应用对应样式
+   */
+  applyStyles(element: HTMLElement, className: string) {
+    // 移除所有可能的样式类，避免样式冲突
     const styleClasses = [
       'page-display-container',
       'page-display-title-container',
@@ -89,21 +336,12 @@ export class PageDisplay {
     // 应用对应的样式
     this.applyClassStyles(element, className)
   }
-  
-  // 根据类名应用具体样式 - 简约风格
+
+  /**
+   * 根据类名应用具体样式
+   */
   private applyClassStyles(element: HTMLElement, className: string) {
-    const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-    
-    // 统一的颜色规范 - 优化暗色模式
-    const colors = {
-      text: isDarkMode ? '#e8e8e8' : '#333333',
-      textSecondary: isDarkMode ? '#b8b8b8' : '#666666',
-      textMuted: isDarkMode ? '#888888' : '#999999',
-      border: isDarkMode ? '#3a3a3a' : '#e0e0e0',
-      background: isDarkMode ? '#1e1e1e' : '#ffffff',
-      backgroundHover: isDarkMode ? '#2d2d2d' : '#f5f5f5',
-      backgroundSubtle: isDarkMode ? '#252525' : '#fafafa'
-    }
+    const colors = this.getColors()
     
     switch (className) {
       case 'page-display-container':
@@ -215,6 +453,7 @@ export class PageDisplay {
         
         // 添加焦点样式
         element.addEventListener('focus', () => {
+          const isDarkMode = this.isDarkMode()
           element.style.borderColor = isDarkMode ? '#4a9eff' : '#007bff'
           element.style.boxShadow = isDarkMode ? '0 0 0 2px rgba(74, 158, 255, 0.2)' : '0 0 0 2px rgba(0, 123, 255, 0.25)'
         })
@@ -233,29 +472,11 @@ export class PageDisplay {
           max-height: 300px;
           overflow-y: auto;
           scrollbar-width: thin;
-          scrollbar-color: ${isDarkMode ? '#4a4a4a' : '#c0c0c0'} transparent;
+          scrollbar-color: ${this.isDarkMode() ? '#4a4a4a' : '#c0c0c0'} transparent;
         `
         
         // 添加 WebKit 滚动条样式
-        const scrollbarStyle = document.createElement('style')
-        scrollbarStyle.textContent = `
-          .page-display-list::-webkit-scrollbar {
-            width: 6px;
-          }
-          .page-display-list::-webkit-scrollbar-track {
-            background: transparent;
-            border-radius: 3px;
-          }
-          .page-display-list::-webkit-scrollbar-thumb {
-            background: ${isDarkMode ? '#4a4a4a' : '#c0c0c0'};
-            border-radius: 3px;
-            transition: background 0.2s ease;
-          }
-          .page-display-list::-webkit-scrollbar-thumb:hover {
-            background: ${isDarkMode ? '#5a5a5a' : '#a0a0a0'};
-          }
-        `
-        document.head.appendChild(scrollbarStyle)
+        this.addScrollbarStyles()
         break
         
       case 'page-display-item':
@@ -318,7 +539,7 @@ export class PageDisplay {
         element.addEventListener('mouseenter', () => {
           element.style.opacity = '1'
           element.style.background = colors.backgroundHover
-          element.style.borderColor = isDarkMode ? '#4a9eff' : '#007bff'
+          element.style.borderColor = this.isDarkMode() ? '#4a9eff' : '#007bff'
           element.style.transform = 'scale(1.05)'
         })
         
@@ -331,9 +552,42 @@ export class PageDisplay {
         break
     }
   }
-  
-  // 应用特殊样式（如 itemType 相关的样式） - 简约风格
-  private applyItemTypeStyles(element: HTMLElement, itemType: string) {
+
+  /**
+   * 添加滚动条样式
+   */
+  private addScrollbarStyles() {
+    if (document.querySelector('#page-display-scrollbar-style')) {
+      return // 避免重复添加
+    }
+
+    const isDarkMode = this.isDarkMode()
+    const scrollbarStyle = document.createElement('style')
+    scrollbarStyle.id = 'page-display-scrollbar-style'
+    scrollbarStyle.textContent = `
+      .page-display-list::-webkit-scrollbar {
+        width: 6px;
+      }
+      .page-display-list::-webkit-scrollbar-track {
+        background: transparent;
+        border-radius: 3px;
+      }
+      .page-display-list::-webkit-scrollbar-thumb {
+        background: ${isDarkMode ? '#4a4a4a' : '#c0c0c0'};
+        border-radius: 3px;
+        transition: background 0.2s ease;
+      }
+      .page-display-list::-webkit-scrollbar-thumb:hover {
+        background: ${isDarkMode ? '#5a5a5a' : '#a0a0a0'};
+      }
+    `
+    document.head.appendChild(scrollbarStyle)
+  }
+
+  /**
+   * 应用项目类型样式
+   */
+  applyItemTypeStyles(element: HTMLElement, itemType: string) {
     // 移除所有彩色竖线，保持简约风格
     // 只保留基本的缩进区分
     switch (itemType) {
@@ -345,32 +599,272 @@ export class PageDisplay {
         break
     }
   }
-  
-  // 应用多列样式 - 简约风格
-  private applyMultiColumnStyles(element: HTMLElement) {
+
+  /**
+   * 应用多列样式
+   */
+  applyMultiColumnStyles(element: HTMLElement) {
     element.style.display = 'grid'
     element.style.gridTemplateColumns = 'repeat(auto-fit, minmax(180px, 1fr))'
     element.style.gap = '6px'
   }
-  
-  // 应用单行/多行样式
-  private applyLineStyles(element: HTMLElement, multiLine: boolean) {
+
+  /**
+   * 应用多行/单行样式
+   */
+  applyLineStyles(element: HTMLElement, multiLine: boolean) {
     if (multiLine) {
+      // 多行显示：允许换行，不截断文本
       element.style.whiteSpace = 'normal'
       element.style.wordWrap = 'break-word'
     } else {
+      // 单行显示：截断长文本
       element.style.whiteSpace = 'nowrap'
       element.style.overflow = 'hidden'
       element.style.textOverflow = 'ellipsis'
     }
   }
+}
+
+/**
+ * 页面显示项目类型
+ */
+type PageDisplayItemType = 'tag' | 'referenced' | 'referencing-alias' | 'child-referenced-alias' | 'backref-alias-blocks'
+
+/**
+ * 搜索数据结构
+ */
+interface SearchableData {
+  /** 文本内容数组 */
+  text: string[]
+  /** 属性值数组 */
+  properties: string[]
+  /** 块引用数组 */
+  blockrefs: string[]
+  /** 标签数组 */
+  tags: string[]
+}
+
+/**
+ * 页面显示项目接口
+ * 用于在页面空间中显示的各种类型的块项目
+ */
+interface PageDisplayItem {
+  /** 块的唯一标识符 */
+  id: DbId
+  /** 块的主要显示文本 */
+  text: string
+  /** 块的别名列表，用于搜索和显示 */
+  aliases: string[]
+  /** 是否为页面块 */
+  isPage: boolean
+  /** 父块引用（如果存在） */
+  parentBlock?: Block
+  /** 是否隐藏该项目 */
+  _hide?: boolean
+  /** 自定义图标 */
+  _icon?: string
+  /** 项目类型 */
+  itemType: PageDisplayItemType
+  /** 搜索相关字段 */
+  /** 包含所有可搜索文本的字符串 */
+  searchableText?: string
+  /** 结构化的搜索数据 */
+  searchableData?: SearchableData
+}
+
+/**
+ * 引用块结果接口
+ */
+interface ReferencedBlocksResult {
+  /** 被引用的块列表 */
+  blocks: Block[]
+  /** 标签块ID列表 */
+  tagBlockIds: DbId[]
+  /** 内联引用块ID列表 */
+  inlineRefIds: DbId[]
+}
+
+/**
+ * 处理后的项目数据接口
+ */
+interface ProcessedItemsResult {
+  /** 处理后的项目列表 */
+  items: PageDisplayItem[]
+  /** 标签块ID列表 */
+  tagBlockIds: DbId[]
+  /** 内联引用块ID列表 */
+  inlineRefIds: DbId[]
+  /** 包含于块ID列表 */
+  containedInBlockIds: DbId[]
+}
+
+/**
+ * 收集的数据接口
+ */
+interface GatheredData {
+  /** 子标签 */
+  childrenTags: Block[]
+  /** 被引用块结果 */
+  referencedResult: ReferencedBlocksResult
+  /** 包含于块ID列表 */
+  containedInBlockIds: DbId[]
+  /** 引用别名块列表 */
+  referencingAliasBlocks: Block[]
+  /** 子块引用别名块列表 */
+  childReferencedAliasBlocks: Block[]
+  /** 反链中的别名块列表 */
+  backrefAliasBlocks: Block[]
+}
+
+/**
+ * 页面空间显示插件主类
+ * 负责在页面空间中显示当前块的相关信息，包括标签、引用关系等
+ */
+export class PageDisplay {
+  /** 多面板支持：存储每个面板的显示容器，key为面板标识 */
+  private containers: Map<string, HTMLElement> = new Map()
+  /** 多面板支持：存储每个面板的查询列表切换按钮 */
+  private queryListToggleButtons: Map<string, HTMLElement> = new Map()
+  /** 插件名称，用于数据存储和API调用 */
+  private pluginName: string
+  /** DOM变化观察器，用于监听页面变化 */
+  private observer: MutationObserver | null = null
+  /** 样式管理器 */
+  private styleManager: StyleManager
+  /** 日志管理器 */
+  private logger: Logger
+  /** API服务 */
+  private apiService: ApiService
+  /** 错误处理器 */
+  private errorHandler: ErrorHandler
+  /** 数据缓存 */
+  private dataCache: Map<DbId, GatheredData> = new Map()
+  /** 缓存时间戳 */
+  private cacheTimestamps: Map<DbId, number> = new Map()
+  /** 缓存有效期（5分钟） */
+  private readonly CACHE_DURATION = 5 * 60 * 1000
+  
+  // === 显示控制属性 ===
+  /** 控制是否显示图标，默认显示 */
+  private showIcons: boolean = true
+  /** 控制折叠状态，默认展开 */
+  private isCollapsed: boolean = false
+  /** 控制是否多行显示项目文本 */
+  private multiLine: boolean = false
+  /** 控制是否多列显示项目 */
+  private multiColumn: boolean = false
+  
+  // === 状态管理属性 ===
+  /** 缓存上次的根块ID，用于避免重复更新 */
+  private lastRootBlockId: DbId | null = null
+  /** 控制查询列表是否隐藏 */
+  private queryListHidden: boolean = false
+  /** 控制反链别名块查询是否开启，默认关闭 */
+  private backrefAliasQueryEnabled: boolean = false
+  /** 防抖定时器，避免频繁更新 */
+  private updateTimeout: number | null = null
+  /** 定期检查定时器，用于检测页面变化 */
+  private periodicCheckInterval: number | null = null
+  
+  // === 错误处理和重试属性 ===
+  /** 当前重试次数 */
+  private retryCount: number = 0
+  /** 最大重试次数 */
+  private maxRetries: number = 3
+  /** 初始化状态标志 */
+  private isInitialized: boolean = false
+  /** 调试模式开关 */
+  private debugMode: boolean = false
+  
+  // === 缓存相关属性已移至ApiService ===
+
+  /**
+   * 构造函数
+   * @param pluginName 插件名称，用于数据存储和API调用
+   */
+  constructor(pluginName: string) {
+    this.pluginName = pluginName
+    this.logger = new Logger(false)
+    this.styleManager = new StyleManager()
+    this.apiService = new ApiService(this.logger)
+    this.errorHandler = new ErrorHandler(this.logger, this.maxRetries)
+    // 加载用户设置
+    this.loadSettings()
+    // 调试模式默认关闭
+    this.debugMode = false
+    
+    // 清理过期缓存
+    this.clearExpiredCache()
+    
+    // 动态加载CSS文件
+    this.loadCSS()
+    
+    // 设置DOM观察器，监听页面变化
+    this.setupDOMObserver()
+  }
+
+  /**
+   * 动态加载CSS文件
+   * 检查是否已经加载过样式，避免重复加载
+   */
+  private loadCSS() {
+    // 检查是否已经加载过CSS
+    if (document.querySelector('#page-display-styles')) {
+      return
+    }
+ 
+    // 不再需要外部CSS文件，所有样式都由JavaScript处理
+  }
+  
+  /**
+   * 应用样式类到元素
+   * 委托给样式管理器处理
+   * @param element 目标DOM元素
+   * @param className 要应用的样式类名
+   */
+  private applyStyles(element: HTMLElement, className: string) {
+    this.styleManager.applyStyles(element, className)
+  }
+  
+  /**
+   * 应用项目类型样式
+   * 委托给样式管理器处理
+   * @param element 目标DOM元素
+   * @param itemType 项目类型
+   */
+  private applyItemTypeStyles(element: HTMLElement, itemType: string) {
+    this.styleManager.applyItemTypeStyles(element, itemType)
+  }
+  
+  /**
+   * 应用多列样式
+   * 委托给样式管理器处理
+   * @param element 目标DOM元素
+   */
+  private applyMultiColumnStyles(element: HTMLElement) {
+    this.styleManager.applyMultiColumnStyles(element)
+  }
+  
+  /**
+   * 应用多行/单行样式
+   * 委托给样式管理器处理
+   * @param element 目标DOM元素
+   * @param multiLine 是否多行显示
+   */
+  private applyLineStyles(element: HTMLElement, multiLine: boolean) {
+    this.styleManager.applyLineStyles(element, multiLine)
+  }
 
   // 切换图标显示状态
+  /**
+   * 切换图标显示状态
+   * 控制是否在页面空间显示项目中显示图标
+   */
   public toggleIcons() {
     this.showIcons = !this.showIcons
-    this.log("PageDisplay: Icons display toggled to", this.showIcons)
     
-    // 保存设置
+    // 保存设置到本地存储
     this.saveSettings()
     
     // 如果当前面板有显示，重新创建以应用新的图标设置
@@ -381,17 +875,22 @@ export class PageDisplay {
     }
   }
 
-  // 获取图标显示状态
+  /**
+   * 获取图标显示状态
+   * @returns 是否显示图标
+   */
   public getIconsEnabled(): boolean {
     return this.showIcons
   }
 
-  // 切换多行显示状态
+  /**
+   * 切换多行显示状态
+   * 控制项目文本是否以多行形式显示
+   */
   public toggleMultiLine() {
     this.multiLine = !this.multiLine
-    this.log("PageDisplay: Multi-line display toggled to", this.multiLine)
     
-    // 保存设置
+    // 保存设置到本地存储
     this.saveSettings()
     
     // 如果当前面板有显示，重新创建以应用新的多行设置
@@ -402,17 +901,22 @@ export class PageDisplay {
     }
   }
 
-  // 获取多行显示状态
+  /**
+   * 获取多行显示状态
+   * @returns 是否启用多行显示
+   */
   public getMultiLineEnabled(): boolean {
     return this.multiLine
   }
 
-  // 切换多列显示状态
+  /**
+   * 切换多列显示状态
+   * 控制项目是否以多列形式显示
+   */
   public toggleMultiColumn() {
     this.multiColumn = !this.multiColumn
-    this.log("PageDisplay: Multi-column display toggled to", this.multiColumn)
     
-    // 保存设置
+    // 保存设置到本地存储
     this.saveSettings()
     
     // 如果当前面板有显示，重新创建以应用新的多列设置
@@ -424,30 +928,32 @@ export class PageDisplay {
   }
   
 
-  // 获取多列显示状态
+  /**
+   * 获取多列显示状态
+   * @returns 是否启用多列显示
+   */
   public getMultiColumnEnabled(): boolean {
     return this.multiColumn
   }
   
   
-  // 日志工具方法（仅在调试模式下输出）
+  // 日志工具方法（委托给日志管理器）
   private log(...args: any[]) {
-    if (this.debugMode) {
-      console.log(...args)
-    }
+    this.logger.debug(...args)
   }
   
-  // 错误日志（总是输出）
   private logError(...args: any[]) {
-    console.error(...args)
+    this.logger.error(...args)
   }
   
-  // 警告日志（总是输出）
   private logWarn(...args: any[]) {
-    console.warn(...args)
+    this.logger.warn(...args)
   }
   
-  // 获取显示状态
+  /**
+   * 获取当前显示状态
+   * @returns 包含所有显示状态信息的状态对象
+   */
   public getDisplayStatus(): {
     isInitialized: boolean
     isDisplaying: boolean
@@ -466,18 +972,45 @@ export class PageDisplay {
     }
   }
   
-  // 切换调试模式
+  /**
+   * 切换调试模式
+   * 控制是否输出详细的调试信息
+   */
   public toggleDebugMode() {
     this.debugMode = !this.debugMode
-    this.log("PageDisplay: Debug mode toggled to", this.debugMode)
+    this.logger.setDebugMode(this.debugMode)
   }
   
-  // 获取调试模式状态
+  /**
+   * 获取调试模式状态
+   * @returns 是否启用调试模式
+   */
   public getDebugMode(): boolean {
     return this.debugMode
   }
+
+  // 切换反链别名块查询状态
+  public toggleBackrefAliasQuery(): void {
+    this.backrefAliasQueryEnabled = !this.backrefAliasQueryEnabled
+    this.saveSettings()
+    
+    // 清除缓存，因为查询逻辑发生了变化
+    this.clearCache()
+    
+    // 强制更新显示
+    this.forceUpdate()
+  }
+
+  // 获取反链别名块查询状态
+  public getBackrefAliasQueryEnabled(): boolean {
+    return this.backrefAliasQueryEnabled
+  }
   
-  // 获取当前面板标识
+  /**
+   * 获取当前面板标识
+   * 为多面板支持生成唯一的面板标识符
+   * @returns 当前面板的唯一标识符
+   */
   private getCurrentPanelId(): string {
     const activePanel = document.querySelector('.orca-panel.active')
     if (activePanel) {
@@ -501,7 +1034,7 @@ export class PageDisplay {
         this.multiLine = parsedSettings.multiLine ?? false
         this.multiColumn = parsedSettings.multiColumn ?? false
         this.queryListHidden = parsedSettings.queryListHidden ?? false
-        console.log("PageDisplay: Settings loaded", { showIcons: this.showIcons, multiLine: this.multiLine, multiColumn: this.multiColumn, queryListHidden: this.queryListHidden })
+        this.backrefAliasQueryEnabled = parsedSettings.backrefAliasQueryEnabled ?? false
       }
     } catch (error) {
       console.error("PageDisplay: Failed to load settings, using defaults:", error)
@@ -516,17 +1049,22 @@ export class PageDisplay {
         showIcons: this.showIcons,
         multiLine: this.multiLine,
         multiColumn: this.multiColumn,
-        queryListHidden: this.queryListHidden
+        queryListHidden: this.queryListHidden,
+        backrefAliasQueryEnabled: this.backrefAliasQueryEnabled
       }
       await orca.plugins.setData(this.pluginName, "page-display-settings", JSON.stringify(settings))
-      console.log("PageDisplay: Settings saved", settings)
     } catch (error) {
       console.error("PageDisplay: Failed to save settings:", error)
       // 保存失败不影响功能，只记录错误
     }
   }
 
-  // 去重项目，保持唯一性
+  /**
+   * 去重项目，保持唯一性
+   * 根据ID和文本内容去重，避免重复显示相同项目
+   * @param items 原始项目列表
+   * @returns 去重后的项目列表
+   */
   private deduplicateItems(items: PageDisplayItem[]): PageDisplayItem[] {
     const seen = new Set<string>()
     const uniqueItems: PageDisplayItem[] = []
@@ -539,49 +1077,55 @@ export class PageDisplay {
         seen.add(key)
         uniqueItems.push(item)
       } else {
-        console.log("PageDisplay: Duplicate item removed", { id: item.id, text: item.text })
       }
     }
     
     return uniqueItems
   }
 
-  // 初始化PageDisplay
+  /**
+   * 初始化PageDisplay插件
+   * 启动编辑器变化监听、定期检查和显示更新
+   */
   public init() {
-    console.log("PageDisplay: 开始初始化");
     this.observeEditorChanges()
-    console.log("PageDisplay: 已启动编辑器变化监听");
     this.startPeriodicCheck()
-    console.log("PageDisplay: 已启动定期检查");
     this.updateDisplay()
-    console.log("PageDisplay: 已触发显示更新");
     this.isInitialized = true
-    console.log("PageDisplay: 初始化完成");
   }
 
-  // 清理资源
+  /**
+   * 清理资源
+   * 断开观察器、清理定时器、移除DOM元素
+   */
   public destroy() {
+    // 断开DOM观察器
     if (this.observer) {
       this.observer.disconnect()
       this.observer = null
     }
     
-    // 清理定时器
+    // 清理防抖定时器
     if (this.updateTimeout) {
       clearTimeout(this.updateTimeout)
       this.updateTimeout = null
     }
     
+    // 清理定期检查定时器
     if (this.periodicCheckInterval) {
       clearInterval(this.periodicCheckInterval)
       this.periodicCheckInterval = null
     }
     
+    // 移除所有显示元素
     this.removeDisplay()
     this.isInitialized = false
   }
 
-  // 监听编辑器变化
+  /**
+   * 监听编辑器变化
+   * 使用MutationObserver监听页面变化，检测页面切换等事件
+   */
   private observeEditorChanges() {
     // 使用MutationObserver监听页面切换
     this.observer = new MutationObserver((mutations) => {
@@ -615,7 +1159,6 @@ export class PageDisplay {
       })
       
       if (hasPageSwitch) {
-        this.log("PageDisplay: Page switch detected, updating display immediately")
         this.updateDisplay() // 立即更新显示
       }
     })
@@ -623,7 +1166,6 @@ export class PageDisplay {
     // 尝试监听指定的页面切换元素
     const pageSwitchElement = document.querySelector("#main > div > div.orca-panel.active > div:nth-child(3)")
     if (pageSwitchElement) {
-      this.log("PageDisplay: Observing page switch element")
       this.observer.observe(pageSwitchElement, {
         childList: true,
         subtree: true,
@@ -631,7 +1173,6 @@ export class PageDisplay {
         attributeFilter: ['class', 'id']
       })
     } else {
-      this.log("PageDisplay: Page switch element not found, falling back to document.body")
       // 如果找不到指定元素，回退到监听整个文档
     this.observer.observe(document.body, {
       childList: true,
@@ -654,7 +1195,6 @@ export class PageDisplay {
         // 检查是否需要更新显示
         const currentRootBlockId = this.getCurrentRootBlockId()
         if (currentRootBlockId !== this.lastRootBlockId) {
-          this.log("PageDisplay: Page switch detected via periodic check")
           this.updateDisplay()
         }
       }
@@ -713,17 +1253,19 @@ export class PageDisplay {
   }
 
   // 获取当前激活面板的根块ID
+  /**
+   * 获取当前根块ID
+   * 通过分析DOM结构找到当前活动的根块ID
+   * @returns 当前根块ID，如果未找到则返回null
+   */
   private getCurrentRootBlockId(): DbId | null {
     try {
       // 直接访问orca.state，不使用useSnapshot
       const { activePanel, panels } = orca.state
-      this.log("PageDisplay: getCurrentRootBlockId - activePanel:", activePanel, "panels:", panels)
       
       // 查找当前激活的面板
       const findPanel = (panel: any): any => {
-        this.log("PageDisplay: Checking panel:", panel.id, "matches activePanel:", activePanel)
         if (panel.id === activePanel) {
-          this.log("PageDisplay: Found matching panel:", panel)
           return panel
         }
         if (panel.children) {
@@ -736,15 +1278,12 @@ export class PageDisplay {
       }
       
       const currentPanel = findPanel(panels)
-      this.log("PageDisplay: currentPanel found:", currentPanel)
       
       if (currentPanel && currentPanel.viewArgs && currentPanel.viewArgs.blockId) {
         const blockId = currentPanel.viewArgs.blockId
-        this.log("PageDisplay: Found blockId:", blockId)
         return blockId
       }
       
-      this.log("PageDisplay: No blockId found in currentPanel")
       return null
     } catch (error) {
       console.error("Failed to get current root block ID:", error)
@@ -771,13 +1310,11 @@ export class PageDisplay {
       // 获取当前块的信息
       const currentBlock = await this.getBlockInfo(blockId)
       if (!currentBlock || !currentBlock.backRefs || currentBlock.backRefs.length === 0) {
-        this.log("PageDisplay: No backRefs found for block", blockId)
         return []
       }
 
       // 获取所有引用当前块的块ID
       const referencingBlockIds = currentBlock.backRefs.map(backRef => backRef.from)
-      this.log("PageDisplay: referencingBlockIds =", referencingBlockIds)
       
       if (referencingBlockIds.length === 0) return []
       
@@ -785,27 +1322,29 @@ export class PageDisplay {
       const referencingBlocks = await this.cachedApiCall("get-blocks", referencingBlockIds)
       if (!referencingBlocks) return []
 
-      // 过滤出根块是别名块的引用
+      // 过滤出根块是别名块的引用，排除自身块
       const aliasBlocks: Block[] = []
       for (const block of referencingBlocks) {
-        this.log("PageDisplay: checking referencing block", block.id)
+        // 排除自身块
+        if (block.id === blockId) {
+          continue
+        }
         
         // 检查是否有父块
         if (block.parent) {
-          this.log("PageDisplay: block has parent, checking root block", block.parent)
           
           // 获取根块信息
           const rootBlock = await this.getBlockInfo(block.parent)
           if (rootBlock && rootBlock.aliases && rootBlock.aliases.length > 0) {
-            this.log("PageDisplay: root block is alias block", rootBlock.id, rootBlock.aliases)
-            aliasBlocks.push(rootBlock)
+            // 排除自身块
+            if (rootBlock.id !== blockId) {
+              aliasBlocks.push(rootBlock)
+            }
           } else {
-            this.log("PageDisplay: root block is not alias block", rootBlock?.id)
           }
         } else {
           // 如果没有父块，检查当前块本身是否是别名块
           if (block.aliases && block.aliases.length > 0) {
-            this.log("PageDisplay: block itself is alias block", block.id, block.aliases)
             aliasBlocks.push(block)
           }
         }
@@ -818,31 +1357,95 @@ export class PageDisplay {
     }
   }
 
+  // 获取反链中引用的别名块（终极优化版 - 最多2次API调用）
+  private async getBackrefAliasBlocks(blockId: DbId): Promise<Block[]> {
+    try {
+      if (!blockId) return []
+      
+      // 获取当前块信息
+      const currentBlock = await this.getBlockInfo(blockId)
+      if (!currentBlock?.backRefs?.length) return []
+
+      // 1. 获取反链块ID
+      const backrefBlockIds = currentBlock.backRefs.map(backRef => backRef.from).filter(id => id != null)
+      if (backrefBlockIds.length === 0) return []
+      
+      // 2. 批量获取反链块
+      const backrefBlocks = await this.cachedApiCall("get-blocks", backrefBlockIds)
+      if (!backrefBlocks?.length) return []
+      
+      // 3. 收集所有需要查询的块ID（子块 + 被引用块）
+      const allBlockIds = new Set<DbId>()
+      
+      backrefBlocks.forEach((block: any) => {
+        // 添加子块ID
+        if (block.children?.length) {
+          block.children.forEach((childId: any) => allBlockIds.add(childId))
+        }
+        // 添加被引用块ID
+        if (block.refs?.length) {
+          block.refs.forEach((ref: any) => {
+            if (ref.to) allBlockIds.add(ref.to)
+          })
+        }
+      })
+      
+      // 4. 一次性获取所有块
+      if (allBlockIds.size === 0) return []
+      
+      const allBlocks = await this.cachedApiCall("get-blocks", Array.from(allBlockIds))
+      if (!allBlocks?.length) return []
+      
+      // 5. 从子块中收集额外的被引用块ID
+      const additionalReferencedIds = new Set<DbId>()
+      allBlocks.forEach((block: any) => {
+        if (block.refs?.length) {
+          block.refs.forEach((ref: any) => {
+            if (ref.to) additionalReferencedIds.add(ref.to)
+          })
+        }
+      })
+      
+      // 6. 获取额外的被引用块
+      if (additionalReferencedIds.size > 0) {
+        const additionalBlocks = await this.cachedApiCall("get-blocks", Array.from(additionalReferencedIds))
+        if (additionalBlocks?.length) {
+          allBlocks.push(...additionalBlocks)
+        }
+      }
+      
+      // 7. 筛选别名块，排除自身块
+      return allBlocks.filter((block: any) => 
+        block?.aliases?.length > 0 && block.id !== blockId
+      )
+
+    } catch (error) {
+      this.logError("Failed to get backref alias blocks:", error)
+      return []
+    }
+  }
+
+
   // 获取子块中引用的块（当当前块不是别名块时）
   private async getChildReferencedAliasBlocks(blockId: DbId, tagBlockIds: DbId[] = []): Promise<Block[]> {
     try {
       // 获取当前块的信息
       const currentBlock = await this.getBlockInfo(blockId)
       if (!currentBlock) {
-        this.log("PageDisplay: Current block not found for child referenced blocks")
         return []
       }
 
       // 检查当前块是否为别名块
       const isCurrentBlockAlias = currentBlock.aliases && currentBlock.aliases.length > 0
-      this.log("PageDisplay: Current block is alias:", isCurrentBlockAlias, "aliases:", currentBlock.aliases)
       
       // 注释：子块引用逻辑应该始终执行，不依赖于当前块是否为别名块
       // 这个逻辑用于显示当前块的子块中引用的其他块
-      this.log("PageDisplay: 执行子块引用逻辑，当前块别名状态:", isCurrentBlockAlias)
 
       // 检查当前块是否有子块
       if (!currentBlock.children || currentBlock.children.length === 0) {
-        this.log("PageDisplay: No children found for block", blockId)
         return []
       }
 
-      this.log("PageDisplay: Found", currentBlock.children.length, "children for block", blockId)
 
       // 获取所有子块的详细信息
       const childBlocks = await this.cachedApiCall("get-blocks", currentBlock.children)
@@ -854,37 +1457,36 @@ export class PageDisplay {
         if (childBlock.refs && childBlock.refs.length > 0) {
           const childReferencedIds = childBlock.refs.map((ref: any) => ref.to)
           allReferencedBlockIds.push(...childReferencedIds)
-          this.log("PageDisplay: Child block", childBlock.id, "references", childReferencedIds)
         }
       }
 
       if (allReferencedBlockIds.length === 0) {
-        this.log("PageDisplay: No referenced blocks found in children")
         return []
       }
 
       // 去重
       const uniqueReferencedIds = [...new Set(allReferencedBlockIds)]
-      this.log("PageDisplay: Unique referenced block IDs from children:", uniqueReferencedIds)
 
       // 批量获取被引用块的详细信息
       const referencedBlocks = await this.cachedApiCall("get-blocks", uniqueReferencedIds)
       if (!referencedBlocks) return []
 
-      // 过滤出被引用的块，排除标签块
+      // 过滤出被引用的块，排除标签块和自身块
       const childReferencedBlocks: Block[] = []
       for (const block of referencedBlocks) {
+        // 排除自身块
+        if (block.id === blockId) {
+          continue
+        }
+        
         // 检查是否为标签块
         const isTagBlock = tagBlockIds.includes(block.id)
         if (!isTagBlock) {
-          this.log("PageDisplay: Found block referenced by children", block.id, "aliases:", block.aliases, "text:", block.text)
           childReferencedBlocks.push(block)
         } else {
-          this.log("PageDisplay: Skipping tag block from child references", block.id, block.aliases)
         }
       }
 
-      this.log("PageDisplay: Found", childReferencedBlocks.length, "blocks referenced by children")
       return childReferencedBlocks
     } catch (error) {
       this.logError("Failed to get child referenced alias blocks:", error)
@@ -894,65 +1496,52 @@ export class PageDisplay {
   
 
   // 获取被当前块引用的块（当前块引用了哪些块）
-  private async getReferencedBlocks(blockId: DbId): Promise<{ blocks: Block[], tagBlockIds: DbId[], inlineRefIds: DbId[] }> {
+  /**
+   * 获取被引用的块
+   * 分析当前块引用的其他块，包括标签块、属性引用块和内联引用块
+   * @param blockId 当前块ID
+   * @returns 包含被引用块、标签块ID和内联引用ID的对象
+   */
+  private async getReferencedBlocks(blockId: DbId): Promise<ReferencedBlocksResult> {
     try {
-      this.log("PageDisplay: getReferencedBlocks called for blockId:", blockId)
       
       // 获取当前块的信息
       const currentBlock = await this.getBlockInfo(blockId)
       if (!currentBlock) {
-        this.log("PageDisplay: Current block not found for referenced blocks")
         return { blocks: [], tagBlockIds: [], inlineRefIds: [] }
       }
 
-      this.log("PageDisplay: Current block found:", {
-        id: currentBlock.id,
-        text: currentBlock.text,
-        refs: currentBlock.refs?.length || 0,
-        refsDetails: currentBlock.refs
-      })
 
       // 1. 从当前块文本中解析标签（如 #💬番剧, #⭐五星, #我的标签）
-      this.log("PageDisplay: 从当前块文本中解析标签")
       // 支持带空格的标签，匹配 #标签 格式，直到遇到逗号或行尾
       const tagMatches = (currentBlock.text || "").match(/#[^,\n]+/g) || []
-      this.log("PageDisplay: 找到的标签文本:", tagMatches)
       
       // 提取标签块ID（通过别名查找）
       const tagBlockIds: DbId[] = []
       for (const tagText of tagMatches) {
         const aliasName = tagText.substring(1) // 去掉 # 符号
-        this.log("PageDisplay: 处理标签:", tagText, "别名:", aliasName)
         
         try {
           const tagResult = await this.cachedApiCall("get-blockid-by-alias", aliasName)
-          this.log("PageDisplay: get-blockid-by-alias 结果:", tagResult)
           
           if (tagResult && tagResult.id) {
             tagBlockIds.push(tagResult.id)
-            this.log("PageDisplay: 找到标签块ID:", tagText, "->", tagResult.id)
           } else {
-            this.log("PageDisplay: 未找到标签块ID:", tagText, "别名:", aliasName)
             
             // 尝试去掉空格后再次查找
             const trimmedAlias = aliasName.trim()
             if (trimmedAlias !== aliasName) {
-              this.log("PageDisplay: 尝试去掉空格后的别名:", trimmedAlias)
               const trimmedResult = await this.cachedApiCall("get-blockid-by-alias", trimmedAlias)
               if (trimmedResult && trimmedResult.id) {
                 tagBlockIds.push(trimmedResult.id)
-                this.log("PageDisplay: 找到标签块ID (去掉空格):", tagText, "->", trimmedResult.id)
               } else {
-                this.log("PageDisplay: 去掉空格后仍未找到标签块ID:", tagText)
               }
             }
           }
         } catch (error) {
-          this.log("PageDisplay: 查找标签块ID失败:", tagText, error)
         }
       }
       
-      this.log("PageDisplay: 最终标签块ID列表:", tagBlockIds)
 
       // 2. 从当前块的引用中获取被引用的块ID
       const allReferencedBlockIds: DbId[] = []
@@ -960,30 +1549,24 @@ export class PageDisplay {
       
       // 检查当前块是否有引用其他块
       if (currentBlock.refs && currentBlock.refs.length > 0) {
-        this.log("PageDisplay: 当前块的所有引用详情:", currentBlock.refs)
         
         // 先获取所有被引用块的详细信息
-        this.log("PageDisplay: 获取所有被引用块详细信息，ID列表:", allReferencedBlockIds)
         const referencedBlocks = await this.cachedApiCall("get-blocks", allReferencedBlockIds)
         if (!referencedBlocks) {
-          this.log("PageDisplay: get-blocks API returned null/undefined")
           return { blocks: [], tagBlockIds: [], inlineRefIds: [] }
         }
         
-        this.log("PageDisplay: 找到被引用块数量:", referencedBlocks.length, "块:", referencedBlocks)
         
         // 分别处理不同类型的引用
         const inlineRefs: BlockRef[] = []
         const propertyRefs: BlockRef[] = []
         
         for (const ref of currentBlock.refs) {
-          this.log("PageDisplay: 引用详情 - ID:", ref.id, "from:", ref.from, "to:", ref.to, "type:", ref.type, "alias:", ref.alias, "data:", ref.data)
           
           // 获取被引用块的信息
           const referencedBlock = referencedBlocks.find((block: any) => block.id === ref.to)
           const isReferencedBlockAlias = referencedBlock && referencedBlock.aliases && referencedBlock.aliases.length > 0
           
-          this.log("PageDisplay: 被引用块信息 - ID:", ref.to, "是别名块:", isReferencedBlockAlias, "别名:", referencedBlock?.aliases)
           
           let isInlineRef = false
           
@@ -991,57 +1574,45 @@ export class PageDisplay {
           // 根据DOM结构，内联引用的type可能是特定数字值
           if (ref.type === 0 || ref.type === 1) {
             isInlineRef = true
-            this.log("PageDisplay: 通过 type 数字值识别为内联引用:", ref.type)
           }
           // 明确识别属性引用：有 data 属性且不是内联引用
           else if (ref.data && ref.data.length > 0) {
             isInlineRef = false
-            this.log("PageDisplay: 通过 data 识别为属性引用:", ref.data)
           }
           // 明确识别内联引用：有 alias 属性
           else if (ref.alias) {
             isInlineRef = true
-            this.log("PageDisplay: 通过 alias 识别为内联引用:", ref.alias)
           }
           // 明确识别内联引用：在标签块ID中
           else if (tagBlockIds.includes(ref.to)) {
             isInlineRef = true
-            this.log("PageDisplay: 通过标签块ID识别为内联引用")
           }
           // 对于非别名块：解析 content 查找 trv/trva 片段
           else if (!isReferencedBlockAlias && referencedBlock) {
-            this.log("PageDisplay: 解析非别名块的 content 查找内联引用")
             const hasInlineRefInContent = this.checkInlineRefInContent(referencedBlock, ref.to)
             if (hasInlineRefInContent) {
               isInlineRef = true
-              this.log("PageDisplay: 通过 content 解析识别为内联引用")
             } else {
               isInlineRef = false
-              this.log("PageDisplay: content 中未找到内联引用，识别为属性引用")
             }
           }
           // 其他情况：根据 type 值判断
           else if (ref.type !== undefined && ref.type > 0) {
             isInlineRef = false
-            this.log("PageDisplay: 通过 type 识别为属性引用:", ref.type)
           }
           // 默认情况：假设是内联引用（因为大多数引用都是内联的）
           else {
             isInlineRef = true
-            this.log("PageDisplay: 默认识别为内联引用")
           }
           
           if (isInlineRef) {
             inlineRefs.push(ref)
             inlineRefIds.push(ref.to)
-            this.log("PageDisplay: 最终识别为内联引用:", ref)
           } else {
             propertyRefs.push(ref)
-            this.log("PageDisplay: 最终识别为属性引用:", ref)
           }
         }
         
-        this.log("PageDisplay: 内联引用数量:", inlineRefs.length)
         this.log("PageDisplay: 属性引用数量:", propertyRefs.length)
         this.log("PageDisplay: 内联引用块ID:", inlineRefIds)
         
@@ -1061,8 +1632,11 @@ export class PageDisplay {
         return { blocks: [], tagBlockIds: [], inlineRefIds: [] }
       }
 
-      this.log("PageDisplay: 找到被引用块数量:", referencedBlocks.length, "块:", referencedBlocks)
-      return { blocks: referencedBlocks, tagBlockIds, inlineRefIds }
+      // 排除自身块
+      const filteredBlocks = referencedBlocks.filter((block: any) => block.id !== blockId)
+      
+      this.log("PageDisplay: 找到被引用块数量:", filteredBlocks.length, "块:", filteredBlocks)
+      return { blocks: filteredBlocks, tagBlockIds, inlineRefIds }
     } catch (error) {
       this.logError("Failed to get referenced blocks:", error)
       return { blocks: [], tagBlockIds: [], inlineRefIds: [] }
@@ -1070,67 +1644,35 @@ export class PageDisplay {
   }
 
   
-  // 带缓存的API调用
+  // 带缓存的API调用（委托给API服务）
   private async cachedApiCall(apiType: string, ...args: any[]): Promise<any> {
-    const cacheKey = `${apiType}:${JSON.stringify(args)}`
-    const now = Date.now()
-    
-    // 检查缓存
-    if (this.apiCache.has(cacheKey)) {
-      const cached = this.apiCache.get(cacheKey)!
-      if (now - cached.timestamp < this.cacheTimeout) {
-        this.log(`PageDisplay: Using cached result for ${apiType}`)
-        return cached.data
-      } else {
-        // 缓存过期，删除
-        this.apiCache.delete(cacheKey)
-      }
-    }
-    
-    // 调用API
-    const result = await orca.invokeBackend(apiType, ...args)
-    
-    // 缓存结果
-    this.apiCache.set(cacheKey, {
-      data: result,
-      timestamp: now
-    })
-    
-    // 清理过期缓存
-    this.cleanExpiredCache()
-    
-    return result
-  }
-  
-  // 清理过期缓存
-  private cleanExpiredCache() {
-    const now = Date.now()
-    for (const [key, value] of this.apiCache.entries()) {
-      if (now - value.timestamp >= this.cacheTimeout) {
-        this.apiCache.delete(key)
-      }
-    }
+    return this.apiService.call(apiType, ...args)
   }
 
-  // 获取块信息
+  // 获取块信息（委托给API服务）
   private async getBlockInfo(blockId: DbId): Promise<Block | null> {
-    try {
-      const block = await this.cachedApiCall("get-block", blockId)
-      return block
-    } catch (error) {
-      this.logError("Failed to get block info:", error)
-      return null
-    }
+    return this.apiService.getBlock(blockId)
   }
 
   // 检查块是否为页面（通过_hide属性）
+  /**
+   * 检查是否为页面块
+   * 判断给定的块是否为页面类型的块
+   * @param block 要检查的块
+   * @returns 是否为页面块
+   */
   private isPageBlock(block: Block): boolean {
     // 检查_hide属性，如果存在且为false，则为页面
     const hideProperty = block.properties?.find(prop => prop.name === "_hide")
     return hideProperty ? !hideProperty.value : true // 默认为页面
   }
 
-  // 检查块是否是标签块
+  /**
+   * 检查块是否是标签块
+   * 通过检查块的属性来判断是否为标签块
+   * @param block 要检查的块
+   * @returns 是否为标签块
+   */
   private isTagBlock(block: Block): boolean {
     // 检查是否有标签属性
     if (!block.properties || block.properties.length === 0) {
@@ -1190,36 +1732,51 @@ export class PageDisplay {
     return false
   }
 
-  // 检查块是否有标签属性中的块引用（旧方法，保留作为备用）
-  private hasTagRefs(block: Block): boolean {
-    if (!block.properties || block.properties.length === 0) {
-      return false
-    }
-    
-    // 查找标签属性
-    const tagProperty = block.properties.find(prop => prop.name === "tag" || prop.name === "tags")
-    if (!tagProperty || !tagProperty.value) {
-      return false
-    }
-    
-    // 检查标签属性值是否包含块引用格式
-    const tagValue = String(tagProperty.value)
-    
-    // 检查是否包含块引用格式（如 [[block-id]] 或 #block-id）
-    const hasBlockRefs = tagValue.includes('[[') && tagValue.includes(']]') || 
-                        tagValue.includes('#') ||
-                        tagValue.includes('@')
-    
-    this.log("PageDisplay: Checking tag refs for block", block.id, { 
-      tagValue, 
-      hasBlockRefs 
-    })
-    
-    return hasBlockRefs
-  }
 
 
   // 块ID转换为文本
+  /**
+   * 创建PageDisplayItem的通用方法
+   * 统一处理所有类型的块到PageDisplayItem的转换
+   * @param block 块数据
+   * @param itemType 项目类型
+   * @param displayText 显示文本（可选，默认从块数据生成）
+   * @returns 增强后的PageDisplayItem
+   */
+  private async createPageDisplayItem(
+    block: Block, 
+    itemType: PageDisplayItemType, 
+    displayText?: string
+  ): Promise<PageDisplayItem> {
+    const finalDisplayText = displayText || 
+      (block.aliases && block.aliases[0]) || 
+      block.text || 
+      `块 ${block.id}`
+    
+    const aliases = block.aliases && block.aliases.length > 0 ? 
+      block.aliases : 
+      [finalDisplayText]
+    
+    const baseItem: PageDisplayItem = {
+      id: block.id,
+      text: finalDisplayText,
+      aliases: aliases,
+      isPage: this.isPageBlock(block),
+      parentBlock: this.getParentBlock(block),
+      _hide: (block as any)._hide,
+      _icon: (block as any)._icon,
+      itemType: itemType
+    }
+    
+    return await this.enhanceItemForSearch(baseItem, block)
+  }
+
+  /**
+   * 将块ID转换为文本表示
+   * 将数字ID转换为可读的文本，优先使用别名
+   * @param blockId 要转换的块ID
+   * @returns 文本表示
+   */
   private async blockIdToText(blockId: any): Promise<string> {
     if (!blockId) {
       return ''
@@ -1250,6 +1807,13 @@ export class PageDisplay {
   }
 
   // 直接使用 block.refs 解析搜索数据
+  /**
+   * 增强项目搜索数据
+   * 为项目添加可搜索的文本数据，包括块内容、属性、引用等
+   * @param item 要增强的项目
+   * @param block 对应的块数据
+   * @returns 增强后的项目
+   */
   private async enhanceItemForSearch(item: PageDisplayItem, block: Block): Promise<PageDisplayItem> {
     // 收集所有可搜索的文本
     const searchableTexts = [item.text, ...item.aliases]
@@ -1424,6 +1988,12 @@ export class PageDisplay {
   }
 
   // 获取父块信息
+  /**
+   * 获取父块
+   * 从块的属性中提取父块信息
+   * @param block 要获取父块的块
+   * @returns 父块对象，如果不存在则返回undefined
+   */
   private getParentBlock(block: Block): Block | undefined {
     if (block.parent) {
       return orca.state.blocks[block.parent]
@@ -1433,6 +2003,10 @@ export class PageDisplay {
 
 
   // 更新显示（立即执行）
+  /**
+   * 更新显示（带防抖）
+   * 使用100ms防抖避免频繁更新
+   */
   public updateDisplay() {
     this.log("PageDisplay: updateDisplay called")
     
@@ -1445,25 +2019,50 @@ export class PageDisplay {
       this.performUpdate()
   }
   
-  // 强制更新显示（跳过防抖）
+  /**
+   * 强制更新显示（跳过防抖）
+   * 立即执行更新，用于需要立即响应的场景
+   */
   public forceUpdate() {
-    console.log("PageDisplay: Force update triggered")
     this.retryCount = 0
     this.performUpdate()
   }
 
-  // 执行实际更新
+  /**
+   * 强制刷新并重新添加元素（暴力解决bug）
+   * 完全清理现有元素并重新初始化
+   */
+  public forceRefreshAndReinit() {
+    this.log("PageDisplay: 强制刷新并重新添加元素")
+    
+    // 1. 清理所有现有元素
+    this.removeDisplay()
+    
+    // 2. 清理缓存
+    this.clearCache()
+    
+    // 3. 重置状态
+    this.lastRootBlockId = null
+    this.retryCount = 0
+    
+    // 4. 重新初始化
+    this.init()
+    
+    this.log("PageDisplay: 强制刷新完成")
+  }
+
+  /**
+   * 执行实际更新
+   * 获取当前块信息，处理各种类型的引用关系，创建显示内容
+   */
   private async performUpdate() {
-    this.log("PageDisplay: performUpdate called")
+    this.log("performUpdate called")
     
     const rootBlockId = this.getCurrentRootBlockId()
-    this.log("PageDisplay: rootBlockId =", rootBlockId)
+    this.log("rootBlockId =", rootBlockId)
     
-    // 如果根块ID没有变化且当前面板有显示，跳过更新
-    const panelId = this.getCurrentPanelId()
-    const container = this.containers.get(panelId)
-    if (rootBlockId === this.lastRootBlockId && container && container.parentNode) {
-      this.log("PageDisplay: Root block ID unchanged and display exists for current panel, skipping update")
+    // 检查是否需要跳过更新
+    if (this.shouldSkipUpdate(rootBlockId)) {
       return
     }
     
@@ -1482,48 +2081,160 @@ export class PageDisplay {
       return
     }
 
-    // 使用 get-children-tags API 获取子标签
-    this.log("PageDisplay: Getting children tags for rootBlockId:", rootBlockId)
-    const childrenTags = await this.getChildrenTags(rootBlockId)
-    this.log("PageDisplay: childrenTags count:", childrenTags?.length || 0, "items:", childrenTags)
+    // 获取所有需要的数据
+    const data = await this.gatherAllData(rootBlockId)
     
-    // 获取被当前块引用的块（当前块引用了哪些块，如打开数学开发书籍时显示书籍）
-    this.log("PageDisplay: Getting referenced blocks for rootBlockId:", rootBlockId)
-    const referencedResult = await this.getReferencedBlocks(rootBlockId)
-    const referencedBlocks = referencedResult.blocks
-    const tagBlockIds = referencedResult.tagBlockIds
-    const inlineRefIds = referencedResult.inlineRefIds
-    this.log("PageDisplay: referencedBlocks count:", referencedBlocks?.length || 0, "items:", referencedBlocks)
-    this.log("PageDisplay: tagBlockIds:", tagBlockIds)
-    this.log("PageDisplay: inlineRefIds:", inlineRefIds)
+    // 处理数据并创建显示项目
+    const items = await this.processDataToItems(data)
     
-    // 获取被引用的包含于块（从标签层级结构解析）
-    this.log("PageDisplay: Getting contained in blocks from tag hierarchy")
-    const containedInBlockIds = await this.getContainedInBlocks()
-    this.log("PageDisplay: containedInBlockIds:", containedInBlockIds)
-    
-    // 获取引用当前块的别名块（检查根块是否为别名块）
-    this.log("PageDisplay: Getting referencing alias blocks for rootBlockId:", rootBlockId)
-    const referencingAliasBlocks = await this.getReferencingAliasBlocks(rootBlockId)
-    this.log("PageDisplay: referencingAliasBlocks count:", referencingAliasBlocks?.length || 0, "items:", referencingAliasBlocks)
-    
-    // 获取子块中引用的别名块（当当前块没有父块时）
-    this.log("PageDisplay: Getting child referenced alias blocks for rootBlockId:", rootBlockId)
-    this.log("PageDisplay: tagBlockIds for filtering:", tagBlockIds)
-    const childReferencedAliasBlocks = await this.getChildReferencedAliasBlocks(rootBlockId, tagBlockIds)
-    this.log("PageDisplay: childReferencedAliasBlocks count:", childReferencedAliasBlocks?.length || 0, "items:", childReferencedAliasBlocks)
-    
-    // 详细记录每个子块引用块
-    if (childReferencedAliasBlocks && childReferencedAliasBlocks.length > 0) {
-      this.log("PageDisplay: 子块引用块详情:")
-      childReferencedAliasBlocks.forEach((block, index) => {
-        this.log(`PageDisplay: [${index}] ID: ${block.id}, 文本: ${block.text}, 别名: ${block.aliases}`)
-      })
-    } else {
-      this.log("PageDisplay: 没有找到子块引用块")
-    }
+    // 创建显示
+    this.createDisplayFromItems(items, data)
+  }
 
-    // 将子标签转换为显示项目
+  /**
+   * 检查是否应该跳过更新
+   */
+  private shouldSkipUpdate(rootBlockId: DbId | null): boolean {
+    const panelId = this.getCurrentPanelId()
+    const container = this.containers.get(panelId)
+    
+    if (rootBlockId === this.lastRootBlockId && container && container.parentNode) {
+      this.log("Root block ID unchanged and display exists for current panel, skipping update")
+      return true
+    }
+    
+    return false
+  }
+
+  /**
+   * 收集所有需要的数据（修复版）
+   */
+  private async gatherAllData(rootBlockId: DbId): Promise<GatheredData> {
+    // 检查缓存
+    const now = Date.now()
+    const cachedData = this.dataCache.get(rootBlockId)
+    const cacheTime = this.cacheTimestamps.get(rootBlockId)
+    
+    if (cachedData && cacheTime && (now - cacheTime) < this.CACHE_DURATION) {
+      this.log("PageDisplay: 使用缓存数据")
+      return cachedData
+    }
+    
+    // 并行加载所有数据，根据设置决定是否执行反链别名块查询
+    const [
+      childrenTags,
+      referencedResult,
+      containedInBlockIds,
+      referencingAliasBlocks,
+      childReferencedAliasBlocks,
+      backrefAliasBlocks
+    ] = await Promise.all([
+      this.getChildrenTags(rootBlockId),
+      this.getReferencedBlocks(rootBlockId),
+      this.getContainedInBlocks(),
+      this.getReferencingAliasBlocks(rootBlockId),
+      this.getChildReferencedAliasBlocks(rootBlockId, []),
+      this.backrefAliasQueryEnabled ? this.getBackrefAliasBlocks(rootBlockId) : Promise.resolve([])
+    ])
+    
+    const result: GatheredData = {
+      childrenTags,
+      referencedResult,
+      containedInBlockIds,
+      referencingAliasBlocks,
+      childReferencedAliasBlocks,
+      backrefAliasBlocks
+    }
+    
+    // 缓存数据
+    this.dataCache.set(rootBlockId, result)
+    this.cacheTimestamps.set(rootBlockId, now)
+    
+    return result
+  }
+
+  /**
+   * 清理缓存
+   */
+  private clearCache(): void {
+    this.dataCache.clear()
+    this.cacheTimestamps.clear()
+  }
+
+  /**
+   * 清理过期缓存
+   */
+  private clearExpiredCache(): void {
+    const now = Date.now()
+    for (const [blockId, timestamp] of this.cacheTimestamps.entries()) {
+      if (now - timestamp > this.CACHE_DURATION) {
+        this.dataCache.delete(blockId)
+        this.cacheTimestamps.delete(blockId)
+      }
+    }
+  }
+
+  /**
+   * 处理数据并转换为显示项目（优化版）
+   */
+  private async processDataToItems(data: GatheredData): Promise<ProcessedItemsResult> {
+    const { childrenTags, referencedResult, containedInBlockIds, referencingAliasBlocks, childReferencedAliasBlocks, backrefAliasBlocks } = data
+    const { blocks: referencedBlocks, tagBlockIds, inlineRefIds } = referencedResult
+
+    // 只处理有数据的情况，避免不必要的处理
+    const promises = []
+    
+    if (childrenTags?.length) promises.push(this.processTagItems(childrenTags))
+    else promises.push(Promise.resolve([]))
+    
+    if (referencedBlocks?.length) promises.push(this.processReferencedItems(referencedBlocks, tagBlockIds))
+    else promises.push(Promise.resolve([]))
+    
+    if (containedInBlockIds?.length) promises.push(this.processContainedInItems(containedInBlockIds))
+    else promises.push(Promise.resolve([]))
+    
+    if (referencingAliasBlocks?.length) promises.push(this.processReferencingAliasItems(referencingAliasBlocks))
+    else promises.push(Promise.resolve([]))
+    
+    if (childReferencedAliasBlocks?.length) promises.push(this.processChildReferencedAliasItems(childReferencedAliasBlocks))
+    else promises.push(Promise.resolve([]))
+    
+    if (backrefAliasBlocks?.length) promises.push(this.processBackrefAliasItems(backrefAliasBlocks))
+    else promises.push(Promise.resolve([]))
+
+    // 并行处理所有类型的项目
+    const [tagItems, referencedItems, containedInItems, referencingAliasItems, childReferencedAliasItems, backrefAliasItems] = await Promise.all(promises)
+
+    // 合并所有项目
+    const allItems = [...tagItems, ...referencedItems, ...containedInItems, ...referencingAliasItems, ...childReferencedAliasItems, ...backrefAliasItems]
+    
+    // 去重：根据ID和文本内容去重，保持唯一性
+    const uniqueItems = this.deduplicateItems(allItems)
+    
+    // 简化排序逻辑
+    uniqueItems.sort((a, b) => {
+      const aIsPriority = (a.itemType === 'referenced' && tagBlockIds.includes(a.id)) || 
+                         (a.itemType === 'referenced' && containedInBlockIds.includes(a.id))
+      const bIsPriority = (b.itemType === 'referenced' && tagBlockIds.includes(b.id)) || 
+                         (b.itemType === 'referenced' && containedInBlockIds.includes(b.id))
+      
+      if (aIsPriority && !bIsPriority) return -1
+      if (!aIsPriority && bIsPriority) return 1
+      return 0
+    })
+    
+    return {
+      items: uniqueItems,
+      tagBlockIds,
+      inlineRefIds,
+      containedInBlockIds
+    }
+  }
+
+  /**
+   * 处理标签项目
+   */
+  private async processTagItems(childrenTags: Block[]): Promise<PageDisplayItem[]> {
     const tagItems: PageDisplayItem[] = []
     for (const tag of childrenTags) {
       this.log("PageDisplay: processing tag", tag)
@@ -1535,225 +2246,146 @@ export class PageDisplay {
       const hasName = tagWithName.name || (tag.aliases && tag.aliases.length > 0)
       if (hasName) {
         const displayText = (tag.aliases && tag.aliases[0]) || tagWithName.name || tag.text || `Tag ${tag.id}`
-        // 确保 aliases 数组至少包含显示文本，这样搜索就能工作
-        const aliases = tag.aliases && tag.aliases.length > 0 ? tag.aliases : 
-                       (tagWithName.name ? [tagWithName.name] : [displayText])
-        
-        const baseItem: PageDisplayItem = {
-          id: tag.id,
-          text: displayText,
-          aliases: aliases,
-          isPage: this.isPageBlock(tag),
-          parentBlock: this.getParentBlock(tag),
-          _hide: (tag as any)._hide,
-          _icon: (tag as any)._icon,
-          itemType: 'tag'
-        }
-        const enhancedItem = await this.enhanceItemForSearch(baseItem, tag)
+        const enhancedItem = await this.createPageDisplayItem(tag, 'tag', displayText)
         tagItems.push(enhancedItem)
         
-        this.log("PageDisplay: added tag item", { id: tag.id, text: displayText, aliases })
+        this.log("PageDisplay: added tag item", { id: tag.id, text: displayText, aliases: tag.aliases })
       } else {
         this.log("PageDisplay: skipping tag (no name/aliases)", tag)
       }
     }
+    return tagItems
+  }
 
-    // 处理被当前块引用的块（包括标签块和属性引用块）
-    this.log("PageDisplay: ===== 开始处理被引用块 =====")
-    this.log("PageDisplay: 被引用块总数:", referencedBlocks.length)
-    
+  /**
+   * 处理被引用项目
+   */
+  private async processReferencedItems(referencedBlocks: Block[], tagBlockIds: DbId[]): Promise<PageDisplayItem[]> {
     const referencedItems: PageDisplayItem[] = []
-    for (let i = 0; i < referencedBlocks.length; i++) {
-      const block = referencedBlocks[i]
-      this.log("PageDisplay: ===== 处理第", i + 1, "个被引用块 =====")
-      this.log("PageDisplay: 被引用块ID:", block.id)
-      this.log("PageDisplay: 被引用块文本:", block.text)
-      this.log("PageDisplay: 被引用块别名:", block.aliases)
-      this.log("PageDisplay: 被引用块属性:", block.properties)
+    
+    for (const block of referencedBlocks) {
+      this.log("PageDisplay: processing referenced block", block)
       
       // 检查是否为标签块
       const isTagBlock = tagBlockIds.includes(block.id)
-      this.log("PageDisplay: 是否为标签块:", isTagBlock)
       
       // 被引用的块显示条件：必须有别名或文本内容
       const hasName = (block.aliases && block.aliases.length > 0) || block.text
-      this.log("PageDisplay: 被引用块是否有名称:", hasName)
       
       if (hasName) {
         const displayText = (block.aliases && block.aliases[0]) || block.text || `被引用块 ${block.id}`
-        const aliases = block.aliases && block.aliases.length > 0 ? block.aliases : [displayText]
-        
-        this.log("PageDisplay: 被引用块显示文本:", displayText)
-        this.log("PageDisplay: 被引用块别名列表:", aliases)
-        
-        let itemType: 'referenced' = 'referenced'
-        
-        if (isTagBlock) {
-          // 标签块：使用上箭头图标
-          this.log("PageDisplay: 这是标签块，使用上箭头图标")
-          itemType = 'referenced'
-        } else {
-          // 属性引用块：使用标签图标
-          this.log("PageDisplay: 这是属性引用块，使用标签图标")
-          itemType = 'referenced'
-        }
-        
-        this.log("PageDisplay: 最终项目类型:", itemType)
-        
-        const baseItem: PageDisplayItem = {
-          id: block.id,
-          text: displayText,
-          aliases: aliases,
-          isPage: this.isPageBlock(block),
-          parentBlock: this.getParentBlock(block),
-          _hide: (block as any)._hide,
-          _icon: (block as any)._icon,
-          itemType: itemType
-        }
-        const enhancedItem = await this.enhanceItemForSearch(baseItem, block)
+        const enhancedItem = await this.createPageDisplayItem(block, 'referenced', displayText)
         referencedItems.push(enhancedItem)
         
-        this.log("PageDisplay: 已添加被引用项目:", { 
-          id: block.id, 
-          text: displayText, 
-          aliases, 
-          isTagBlock, 
-          itemType 
-        })
-        this.log("PageDisplay: ================================")
+        this.log("PageDisplay: added referenced item", { id: block.id, text: displayText, isTagBlock })
       } else {
-        this.log("PageDisplay: 跳过被引用块（没有名称/别名）:", block)
+        this.log("PageDisplay: skipping referenced block (no name/aliases)", block)
       }
     }
     
-    this.log("PageDisplay: ===== 被引用块处理完成 =====")
-    this.log("PageDisplay: 最终被引用项目数量:", referencedItems.length)
+    return referencedItems
+  }
 
-    // 处理被引用的包含于块（从标签层级结构解析）
-    this.log("PageDisplay: ===== 开始处理包含于块 =====")
+  /**
+   * 处理包含于项目
+   */
+  private async processContainedInItems(containedInBlockIds: DbId[]): Promise<PageDisplayItem[]> {
     const containedInItems: PageDisplayItem[] = []
     
     for (const blockId of containedInBlockIds) {
       try {
-        this.log(`PageDisplay: 处理包含于块ID: ${blockId}`)
+        this.log(`PageDisplay: processing contained in block ID: ${blockId}`)
         
         // 获取块数据
         const block = await this.cachedApiCall("get-block", blockId)
         if (!block) {
-          this.log(`PageDisplay: 未找到包含于块ID: ${blockId}`)
+          this.log(`PageDisplay: block not found for ID: ${blockId}`)
           continue
         }
-        
-        this.log(`PageDisplay: 包含于块文本: ${block.text}`)
-        this.log(`PageDisplay: 包含于块别名: ${block.aliases}`)
         
         // 检查是否有名称或别名
         const hasName = (block.aliases && block.aliases.length > 0) || block.text
         if (hasName) {
           const displayText = (block.aliases && block.aliases[0]) || block.text || `包含于块 ${block.id}`
-          const aliases = block.aliases && block.aliases.length > 0 ? block.aliases : [displayText]
-          
-          this.log(`PageDisplay: 包含于块显示文本: ${displayText}`)
-          
-          const baseItem: PageDisplayItem = {
-            id: block.id,
-            text: displayText,
-            aliases: aliases,
-            isPage: this.isPageBlock(block),
-            parentBlock: this.getParentBlock(block),
-            _hide: (block as any)._hide,
-            _icon: (block as any)._icon,
-            itemType: 'referenced' // 使用相同的类型，但会在图标分配时特殊处理
-          }
-          const enhancedItem = await this.enhanceItemForSearch(baseItem, block)
+          const enhancedItem = await this.createPageDisplayItem(block, 'referenced', displayText)
           containedInItems.push(enhancedItem)
           
-          this.log(`PageDisplay: 已添加包含于项目: ${displayText}`)
+          this.log(`PageDisplay: added contained in item: ${displayText}`)
         } else {
-          this.log(`PageDisplay: 跳过包含于块（没有名称/别名）: ${blockId}`)
+          this.log(`PageDisplay: skipping contained in block (no name/aliases): ${blockId}`)
         }
       } catch (error) {
-        this.logError(`处理包含于块 ${blockId} 失败:`, error)
+        this.logError(`Failed to process contained in block ${blockId}:`, error)
       }
     }
     
-    this.log("PageDisplay: ===== 包含于块处理完成 =====")
-    this.log("PageDisplay: 最终包含于项目数量:", containedInItems.length)
+    return containedInItems
+  }
 
-    // 处理引用当前块的别名块（根块是别名块）
+  /**
+   * 处理引用别名项目
+   */
+  private async processReferencingAliasItems(referencingAliasBlocks: Block[]): Promise<PageDisplayItem[]> {
     const referencingAliasItems: PageDisplayItem[] = []
+    
     for (const block of referencingAliasBlocks) {
       this.log("PageDisplay: processing referencing alias block", block)
       
-      // 这些块已经是别名块，直接添加
       const displayText = (block.aliases && block.aliases[0]) || block.text || `Block ${block.id}`
-      
-      const baseItem: PageDisplayItem = {
-        id: block.id,
-        text: displayText,
-        aliases: block.aliases || [],
-        isPage: this.isPageBlock(block),
-        parentBlock: this.getParentBlock(block),
-        _hide: (block as any)._hide,
-        _icon: (block as any)._icon,
-        itemType: 'referencing-alias'
-      }
-      const enhancedItem = await this.enhanceItemForSearch(baseItem, block)
+      const enhancedItem = await this.createPageDisplayItem(block, 'referencing-alias', displayText)
       referencingAliasItems.push(enhancedItem)
       
       this.log("PageDisplay: added referencing alias item", { id: block.id, text: displayText, aliases: block.aliases })
     }
+    
+    return referencingAliasItems
+  }
 
-    // 处理子块中引用的别名块（当当前块没有父块时）
+  /**
+   * 处理子块引用别名项目
+   */
+  private async processChildReferencedAliasItems(childReferencedAliasBlocks: Block[]): Promise<PageDisplayItem[]> {
     const childReferencedAliasItems: PageDisplayItem[] = []
+    
     for (const block of childReferencedAliasBlocks) {
       this.log("PageDisplay: processing child referenced alias block", block)
       
-      // 这些块是子块引用的别名块，添加特殊标记
       const displayText = (block.aliases && block.aliases[0]) || block.text || `子块引用别名 ${block.id}`
-      
-      const baseItem: PageDisplayItem = {
-        id: block.id,
-        text: displayText,
-        aliases: block.aliases || [],
-        isPage: this.isPageBlock(block),
-        parentBlock: this.getParentBlock(block),
-        _hide: (block as any)._hide,
-        _icon: (block as any)._icon,
-        itemType: 'child-referenced-alias'
-      }
-      const enhancedItem = await this.enhanceItemForSearch(baseItem, block)
+      const enhancedItem = await this.createPageDisplayItem(block, 'child-referenced-alias', displayText)
       childReferencedAliasItems.push(enhancedItem)
       
       this.log("PageDisplay: added child referenced alias item", { id: block.id, text: displayText, aliases: block.aliases })
     }
+    
+    return childReferencedAliasItems
+  }
 
+  /**
+   * 处理反链中的别名块项目
+   */
+  private async processBackrefAliasItems(backrefAliasBlocks: Block[]): Promise<PageDisplayItem[]> {
+    const backrefAliasItems: PageDisplayItem[] = []
+    
+    for (const block of backrefAliasBlocks) {
+      this.log("PageDisplay: processing backref alias block", block)
+      
+      const displayText = (block.aliases && block.aliases[0]) || block.text || `反链别名 ${block.id}`
+      const enhancedItem = await this.createPageDisplayItem(block, 'backref-alias-blocks', displayText)
+      backrefAliasItems.push(enhancedItem)
+      
+      this.log("PageDisplay: added backref alias item", { id: block.id, text: displayText, aliases: block.aliases })
+    }
+    
+    return backrefAliasItems
+  }
 
-    // 合并所有项目
-    const allItems = [...tagItems, ...referencedItems, ...containedInItems, ...referencingAliasItems, ...childReferencedAliasItems]
+  /**
+   * 从处理后的项目创建显示
+   */
+  private createDisplayFromItems(items: ProcessedItemsResult, data: GatheredData) {
+    const { items: uniqueItems, tagBlockIds, inlineRefIds, containedInBlockIds } = items
     
-    // 去重：根据ID和文本内容去重，保持唯一性
-    const uniqueItems = this.deduplicateItems(allItems)
-    
-    // 排序：标签块和包含于块（上箭头图标）显示在最上面
-    uniqueItems.sort((a, b) => {
-      // 标签块和包含于块优先显示
-      const aIsTagBlock = a.itemType === 'referenced' && tagBlockIds.includes(a.id)
-      const bIsTagBlock = b.itemType === 'referenced' && tagBlockIds.includes(b.id)
-      const aIsContainedIn = a.itemType === 'referenced' && containedInBlockIds.includes(a.id)
-      const bIsContainedIn = b.itemType === 'referenced' && containedInBlockIds.includes(b.id)
-      
-      const aIsPriority = aIsTagBlock || aIsContainedIn
-      const bIsPriority = bIsTagBlock || bIsContainedIn
-      
-      if (aIsPriority && !bIsPriority) return -1
-      if (!aIsPriority && bIsPriority) return 1
-      
-      // 其他项目保持原有顺序
-      return 0
-    })
-    
-    this.log("PageDisplay: Creating display with", uniqueItems.length, "unique items (", tagItems.length, "tags +", referencedItems.length, "referenced +", containedInItems.length, "contained in +", referencingAliasItems.length, "referencing alias +", childReferencedAliasItems.length, "child referenced alias)")
+    this.log("PageDisplay: Creating display with", uniqueItems.length, "unique items")
     
     try {
       this.createDisplay(uniqueItems, tagBlockIds, inlineRefIds, containedInBlockIds)
@@ -1767,82 +2399,124 @@ export class PageDisplay {
     }
   }
   
-  // 处理显示错误
+  // 处理显示错误（委托给错误处理器）
   private handleDisplayError(error: any) {
     this.retryCount++
-    this.logWarn(`PageDisplay: Display error (attempt ${this.retryCount}/${this.maxRetries}):`, error)
-    
-    if (this.retryCount < this.maxRetries) {
-      // 延迟重试
-      setTimeout(() => {
-        this.log("PageDisplay: Retrying display creation...")
-        this.updateDisplay()
-      }, 1000 * this.retryCount) // 递增延迟
-    } else {
-      this.logError("PageDisplay: Max retries reached, giving up")
-      orca.notify("error", "页面空间显示失败，请尝试手动刷新")
-    }
+    this.errorHandler.handleDisplayError(error, this.retryCount, this.maxRetries, () => {
+      this.updateDisplay()
+    })
   }
 
-  // 获取子标签
+  // 获取子标签（委托给API服务）
   private async getChildrenTags(blockId: DbId): Promise<Block[]> {
-    try {
-      const childrenTags = await this.cachedApiCall("get-children-tags", blockId)
-      return childrenTags || []
-    } catch (error) {
-      this.logError("Failed to get children tags:", error)
-      return []
-    }
+    return this.apiService.getChildrenTags(blockId)
   }
 
-  // 解析标签层级结构，获取被引用的包含于块
+  /**
+   * 解析标签层级结构，获取被引用的包含于块
+   * 从DOM中解析标签层级结构，找到包含于块并获取其ID
+   * @returns 包含于块的ID数组
+   */
   private async getContainedInBlocks(): Promise<DbId[]> {
-    try {
-      this.log("开始解析标签层级结构...")
-      
-      // 查找标签层级结构元素
-      const hierarchyElement = document.querySelector('.orca-repr-tag-hierarchy')
-      if (!hierarchyElement) {
-        this.log("未找到标签层级结构元素")
-        return []
-      }
-
-      // 查找第一个 span.orca-repr-tag-hierarchy-text
-      const firstSpan = hierarchyElement.querySelector('span.orca-repr-tag-hierarchy-text')
-      if (!firstSpan) {
-        this.log("未找到第一个标签层级文本元素")
-        return []
-      }
-
-      const tagText = firstSpan.textContent?.trim()
-      if (!tagText) {
-        this.log("标签层级文本为空")
-        return []
-      }
-
-      this.log(`找到标签层级文本: "${tagText}"`)
-
-      // 通过别名查找对应的块ID
+    const maxRetries = 3
+    const retryDelay = 500 // 500ms
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const blockId = await this.cachedApiCall("get-blockid-by-alias", tagText)
-        if (blockId && typeof blockId === 'object' && blockId.id) {
-          this.log(`找到包含于块ID: ${blockId.id} (别名: ${tagText})`)
-          return [blockId.id]
-        } else if (typeof blockId === 'number') {
-          this.log(`找到包含于块ID: ${blockId} (别名: ${tagText})`)
-          return [blockId]
-        } else {
-          this.log(`未找到别名 "${tagText}" 对应的块ID`)
+        this.log(`开始解析标签层级结构... (尝试 ${attempt}/${maxRetries})`)
+        
+        // 查找标签层级结构元素 - 尝试多种选择器
+        let hierarchyElement = document.querySelector('.orca-repr-tag-hierarchy')
+        
+        // 如果没找到，尝试在活动面板中查找
+        if (!hierarchyElement) {
+          const activePanel = document.querySelector('.orca-panel.active')
+          if (activePanel) {
+            hierarchyElement = activePanel.querySelector('.orca-repr-tag-hierarchy')
+            this.log("在活动面板中查找标签层级结构元素")
+          }
+        }
+        
+        // 如果还是没找到，尝试查找所有可能的层级结构元素
+        if (!hierarchyElement) {
+          const allHierarchyElements = document.querySelectorAll('.orca-repr-tag-hierarchy')
+          this.log(`找到 ${allHierarchyElements.length} 个标签层级结构元素`)
+          
+          // 选择第一个可见的元素
+          for (const element of allHierarchyElements) {
+            const rect = element.getBoundingClientRect()
+            if (rect.width > 0 && rect.height > 0) {
+              hierarchyElement = element
+              this.log("选择第一个可见的标签层级结构元素")
+              break
+            }
+          }
+        }
+        
+        if (!hierarchyElement) {
+          this.log(`尝试 ${attempt}: 未找到标签层级结构元素`)
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, retryDelay))
+            continue
+          }
+          return []
+        }
+
+        // 查找第一个 span.orca-repr-tag-hierarchy-text
+        const firstSpan = hierarchyElement.querySelector('span.orca-repr-tag-hierarchy-text')
+        if (!firstSpan) {
+          this.log(`尝试 ${attempt}: 未找到第一个标签层级文本元素`)
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, retryDelay))
+            continue
+          }
+          return []
+        }
+
+        const tagText = firstSpan.textContent?.trim()
+        if (!tagText) {
+          this.log(`尝试 ${attempt}: 标签层级文本为空`)
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, retryDelay))
+            continue
+          }
+          return []
+        }
+
+        this.log(`找到标签层级文本: "${tagText}"`)
+
+        // 通过别名查找对应的块ID
+        try {
+          const blockId = await this.cachedApiCall("get-blockid-by-alias", tagText)
+          if (blockId && typeof blockId === 'object' && blockId.id) {
+            this.log(`找到包含于块ID: ${blockId.id} (别名: ${tagText})`)
+            return [blockId.id]
+          } else if (typeof blockId === 'number') {
+            this.log(`找到包含于块ID: ${blockId} (别名: ${tagText})`)
+            return [blockId]
+          } else {
+            this.log(`未找到别名 "${tagText}" 对应的块ID`)
+            return []
+          }
+        } catch (error) {
+          this.logError(`查找别名 "${tagText}" 对应的块ID失败:`, error)
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, retryDelay))
+            continue
+          }
           return []
         }
       } catch (error) {
-        this.logError(`查找别名 "${tagText}" 对应的块ID失败:`, error)
+        this.logError(`解析标签层级结构失败 (尝试 ${attempt}):`, error)
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, retryDelay))
+          continue
+        }
         return []
       }
-    } catch (error) {
-      this.logError("解析标签层级结构失败:", error)
-      return []
     }
+    
+    return []
   }
 
   // 创建查询列表控制按钮
@@ -1926,25 +2600,20 @@ export class PageDisplay {
     
     // 添加点击事件
     button.addEventListener('click', () => {
-      console.log('PageDisplay: Query list toggle button clicked')
       this.toggleQueryListVisibility()
     })
     
     // 添加到 page-display-left-content 后面
     const leftContent = document.querySelector('.page-display-left-content')
-    console.log('PageDisplay: leftContent found:', leftContent)
     if (leftContent && leftContent.parentNode) {
       leftContent.parentNode.insertBefore(button, leftContent.nextSibling)
-      console.log('PageDisplay: Button inserted after leftContent')
     } else {
       // 如果找不到 leftContent，添加到 body
       document.body.appendChild(button)
-      console.log('PageDisplay: Button added to body')
     }
     
     // 存储按钮引用
     this.queryListToggleButtons.set(panelId, button)
-    console.log('PageDisplay: Query list toggle button created for panel:', panelId)
   }
 
   // 更新查询列表按钮状态
@@ -1971,7 +2640,6 @@ export class PageDisplay {
       // 检查 .orca-query-list 是否包含特定块
       const hasTargetBlock = list.querySelector('.orca-block.orca-container.orca-block-postfix.orca-query-list-block-block')
       if (hasTargetBlock) {
-        console.log(`PageDisplay: Found target block in query list ${listIndex}`)
         
         // 查找该列表中的 .orca-query-list-block 元素
         const queryBlocks = list.querySelectorAll('.orca-query-list-block')
@@ -1981,7 +2649,6 @@ export class PageDisplay {
           if (hasNestedTargetBlock) {
             // 根据持久化状态决定是否隐藏
             (queryBlock as HTMLElement).style.display = this.queryListHidden ? 'none' : ''
-            console.log(`PageDisplay: Query block ${blockIndex} in list ${listIndex} display set to:`, (queryBlock as HTMLElement).style.display)
           }
         })
       }
@@ -2005,7 +2672,14 @@ export class PageDisplay {
     }
   }
 
-  // 创建显示元素
+  /**
+   * 创建显示元素
+   * 根据项目列表创建完整的页面空间显示界面
+   * @param items 要显示的项目列表
+   * @param tagBlockIds 标签块ID列表，用于图标分配
+   * @param inlineRefIds 内联引用块ID列表，用于图标分配
+   * @param containedInBlockIds 包含于块ID列表，用于图标分配
+   */
   private createDisplay(items: PageDisplayItem[], tagBlockIds: DbId[] = [], inlineRefIds: DbId[] = [], containedInBlockIds: DbId[] = []) {
     this.log("PageDisplay: createDisplay called with", items.length, "items")
     this.log("PageDisplay: Items details:", items)
@@ -2334,6 +3008,10 @@ export class PageDisplay {
               // 子块引用块图标
               this.log(`PageDisplay: 分配立方体图标 (ti-cube) - ${item.text}`)
               icon.className = 'page-display-item-icon ti ti-cube'
+            } else if (item.itemType === 'backref-alias-blocks') {
+              // 反链中的别名块图标
+              this.log(`PageDisplay: 分配问号放大镜图标 (ti-zoom-question) - ${item.text}`)
+              icon.className = 'page-display-item-icon ti ti-zoom-question'
             } else if (item._hide) {
               // 页面图标
               this.log(`PageDisplay: 分配文件图标 (ti-file) - ${item.text}`)
@@ -2371,7 +3049,6 @@ export class PageDisplay {
         itemElement.addEventListener('click', (e) => {
           e.preventDefault()
           e.stopPropagation()
-          console.log("PageDisplay: Item clicked", { id: item.id, text: item.text })
           this.openBlock(item.id)
         })
 
@@ -2502,13 +3179,21 @@ export class PageDisplay {
     }
   }
   
-  // 检查是否应该显示
+  /**
+   * 检查是否应该显示
+   * 判断当前是否应该显示页面空间内容
+   * @returns 是否应该显示
+   */
   private shouldDisplay(): boolean {
     const rootBlockId = this.getCurrentRootBlockId()
     return rootBlockId !== null && !this.isCollapsed && this.isInitialized
   }
   
-  // 检查是否正在显示
+  /**
+   * 检查是否正在显示
+   * 判断当前是否有显示内容
+   * @returns 是否正在显示
+   */
   private isDisplaying(): boolean {
     const panelId = this.getCurrentPanelId()
     const container = this.containers.get(panelId)
@@ -2521,23 +3206,18 @@ export class PageDisplay {
   private hasQueryList(): boolean {
     const queryList = document.querySelector('.orca-query-list')
     if (!queryList) {
-      console.log('PageDisplay: No .orca-query-list found')
       return false
     }
     
     const queryListBlock = queryList.querySelector('.orca-block.orca-container.orca-block-postfix.orca-query-list-block-block')
     const hasBlock = queryListBlock !== null
-    console.log('PageDisplay: hasQueryList result:', hasBlock, 'queryList:', queryList, 'block:', queryListBlock)
     return hasBlock
   }
 
   // 切换查询列表显示状态
   private toggleQueryListVisibility() {
-    console.log('PageDisplay: Toggling query list visibility')
-    
     // 切换持久化状态
     this.queryListHidden = !this.queryListHidden
-    console.log('PageDisplay: New hidden state:', this.queryListHidden)
     
     // 应用新的状态
     this.applyQueryListHideLogic()
@@ -2551,6 +3231,11 @@ export class PageDisplay {
   }
 
   // 查找目标元素 - 支持多种查找策略，优先查找当前活跃面板
+  /**
+   * 查找目标元素
+   * 在页面空间中查找合适的位置插入显示元素
+   * @returns 目标DOM元素，如果未找到则返回null
+   */
   private findTargetElement(): Element | null {
     const strategies = [
       // 策略1: 查找当前活跃面板中的编辑器容器
@@ -2640,7 +3325,11 @@ export class PageDisplay {
       return null
     }
 
-  // 移除显示
+  /**
+   * 移除显示
+   * 移除指定面板或所有面板的显示内容
+   * @param panelId 可选的面板ID，如果不提供则移除所有面板
+   */
   private removeDisplay(panelId?: string) {
     if (panelId) {
       // 移除指定面板的显示
@@ -2680,53 +3369,40 @@ export class PageDisplay {
   // 打开块
   private async openBlock(blockId: DbId) {
     try {
-      console.log("PageDisplay: Attempting to open block", blockId)
       
       // 方法1: 使用 orca.nav.goTo (推荐方法)
       if (orca.nav && orca.nav.goTo) {
         try {
-          console.log("PageDisplay: Using orca.nav.goTo to open block")
           orca.nav.goTo("block", { blockId: blockId })
-          console.log("PageDisplay: Successfully opened block with orca.nav.goTo")
           return
         } catch (navError) {
-          console.log("PageDisplay: orca.nav.goTo failed, trying alternative methods:", navError)
         }
       }
       
       // 方法2: 使用 orca.nav.openInLastPanel (在新面板中打开)
       if (orca.nav && orca.nav.openInLastPanel) {
         try {
-          console.log("PageDisplay: Using orca.nav.openInLastPanel to open block")
           orca.nav.openInLastPanel("block", { blockId: blockId })
-          console.log("PageDisplay: Successfully opened block with orca.nav.openInLastPanel")
           return
         } catch (panelError) {
-          console.log("PageDisplay: orca.nav.openInLastPanel failed, trying editor commands:", panelError)
         }
       }
       
       // 方法3: 尝试使用 core.editor.focusIn 命令
       if (orca.commands && orca.commands.invokeEditorCommand) {
         try {
-          console.log("PageDisplay: Trying core.editor.focusIn command")
           await orca.commands.invokeEditorCommand("core.editor.focusIn", null, blockId)
-          console.log("PageDisplay: Successfully opened block with focusIn")
           return
         } catch (focusError) {
-          console.log("PageDisplay: focusIn failed, trying openOnTheSide:", focusError)
         }
       }
       
       // 方法4: 尝试使用 core.editor.openOnTheSide 命令
       if (orca.commands && orca.commands.invokeEditorCommand) {
         try {
-          console.log("PageDisplay: Trying core.editor.openOnTheSide command")
           await orca.commands.invokeEditorCommand("core.editor.openOnTheSide", null, blockId)
-          console.log("PageDisplay: Successfully opened block with openOnTheSide")
           return
         } catch (sideError) {
-          console.log("PageDisplay: openOnTheSide failed:", sideError)
         }
       }
       
@@ -2745,5 +3421,50 @@ export class PageDisplay {
       })
       orca.notify("error", `打开块失败: ${errorMessage}`)
     }
+  }
+
+  /**
+   * 设置DOM观察器
+   * 监听页面变化，当标签层级结构出现时自动更新显示
+   */
+  private setupDOMObserver() {
+    // 观察DOM变化，当标签层级结构出现时重新更新显示
+    const observer = new MutationObserver((mutations) => {
+      let shouldUpdate = false
+      
+      mutations.forEach((mutation) => {
+        // 检查是否有新的标签层级结构元素添加
+        if (mutation.type === 'childList') {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node as Element
+              // 检查是否包含标签层级结构元素
+              if (element.querySelector?.('.orca-repr-tag-hierarchy') || 
+                  element.classList?.contains('orca-repr-tag-hierarchy')) {
+                this.log("检测到新的标签层级结构元素，准备更新显示")
+                shouldUpdate = true
+              }
+            }
+          })
+        }
+      })
+      
+      if (shouldUpdate) {
+        // 延迟更新，确保DOM完全渲染
+        setTimeout(() => {
+          this.log("DOM变化触发显示更新")
+          this.updateDisplay()
+        }, 100)
+      }
+    })
+    
+    // 开始观察整个文档的变化
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: false
+    })
+    
+    this.log("DOM观察器已启动")
   }
 }
