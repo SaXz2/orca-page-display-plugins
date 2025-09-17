@@ -748,8 +748,8 @@ export class PageDisplay {
   // === 显示控制属性 ===
   /** 控制是否显示图标，默认显示 */
   private showIcons: boolean = true
-  /** 控制折叠状态，默认展开 */
-  private isCollapsed: boolean = false
+  /** 控制每个页面的折叠状态，key为页面ID，默认展开 */
+  private pageCollapseStates: Map<DbId, boolean> = new Map()
   /** 控制是否多行显示项目文本 */
   private multiLine: boolean = false
   /** 控制是否多列显示项目 */
@@ -1035,6 +1035,12 @@ export class PageDisplay {
         this.multiColumn = parsedSettings.multiColumn ?? false
         this.queryListHidden = parsedSettings.queryListHidden ?? false
         this.backrefAliasQueryEnabled = parsedSettings.backrefAliasQueryEnabled ?? false
+        // 加载页面折叠状态
+        if (parsedSettings.pageCollapseStates) {
+          this.pageCollapseStates = new Map(
+            Object.entries(parsedSettings.pageCollapseStates).map(([key, value]) => [Number(key), value as boolean])
+          )
+        }
       }
     } catch (error) {
       console.error("PageDisplay: Failed to load settings, using defaults:", error)
@@ -1050,7 +1056,9 @@ export class PageDisplay {
         multiLine: this.multiLine,
         multiColumn: this.multiColumn,
         queryListHidden: this.queryListHidden,
-        backrefAliasQueryEnabled: this.backrefAliasQueryEnabled
+        backrefAliasQueryEnabled: this.backrefAliasQueryEnabled,
+        // 保存页面折叠状态
+        pageCollapseStates: Object.fromEntries(this.pageCollapseStates)
       }
       await orca.plugins.setData(this.pluginName, "page-display-settings", JSON.stringify(settings))
     } catch (error) {
@@ -1288,6 +1296,29 @@ export class PageDisplay {
     } catch (error) {
       console.error("Failed to get current root block ID:", error)
       return null
+    }
+  }
+
+  /**
+   * 获取当前页面的折叠状态
+   * @returns 当前页面是否处于折叠状态，默认为false（展开）
+   */
+  private getCurrentPageCollapseState(): boolean {
+    const rootBlockId = this.getCurrentRootBlockId()
+    if (!rootBlockId) return false
+    return this.pageCollapseStates.get(rootBlockId) || false
+  }
+
+  /**
+   * 设置当前页面的折叠状态
+   * @param collapsed 是否折叠
+   */
+  private setCurrentPageCollapseState(collapsed: boolean): void {
+    const rootBlockId = this.getCurrentRootBlockId()
+    if (rootBlockId) {
+      this.pageCollapseStates.set(rootBlockId, collapsed)
+      // 保存设置到本地存储
+      this.saveSettings()
     }
   }
 
@@ -2074,9 +2105,9 @@ export class PageDisplay {
       return
     }
 
-    // 如果处于折叠状态，不显示内容
-    if (this.isCollapsed) {
-      this.log("PageDisplay: Collapsed state, not displaying content")
+    // 如果当前页面处于折叠状态，不显示内容
+    if (this.getCurrentPageCollapseState()) {
+      this.log("PageDisplay: Current page is collapsed, not displaying content")
       this.removeDisplay()
       return
     }
@@ -2728,8 +2759,8 @@ export class PageDisplay {
     arrow.textContent = '▶'
     this.applyStyles(arrow, 'page-display-arrow')
     
-    // 设置初始状态：展开状态，箭头向下
-    if (!this.isCollapsed) {
+    // 设置初始状态：根据当前页面状态设置箭头方向
+    if (!this.getCurrentPageCollapseState()) {
       arrow.style.transform = 'rotate(90deg)'
     }
     
@@ -2805,9 +2836,11 @@ export class PageDisplay {
       if (isTransitioning) return
       
       isTransitioning = true
-      this.isCollapsed = !this.isCollapsed
+      const currentCollapsed = this.getCurrentPageCollapseState()
+      const newCollapsed = !currentCollapsed
+      this.setCurrentPageCollapseState(newCollapsed)
       
-      if (this.isCollapsed) {
+      if (newCollapsed) {
         // 折叠：平滑隐藏列表
         list.style.opacity = '0'
         list.style.maxHeight = '0'
@@ -2821,7 +2854,7 @@ export class PageDisplay {
         
         // 延迟设置display为none，确保过渡完成
         setTimeout(() => {
-          if (this.isCollapsed) {
+          if (this.getCurrentPageCollapseState()) {
             list.style.display = 'none'
             if (isSearchVisible) {
               searchContainer.style.display = 'none'
@@ -3129,6 +3162,19 @@ export class PageDisplay {
     
     // 初始显示所有项目
     updateDisplay()
+    
+    // 根据当前页面的折叠状态设置初始显示
+    if (this.getCurrentPageCollapseState()) {
+      list.style.display = 'none'
+      list.style.opacity = '0'
+      list.style.maxHeight = '0'
+      arrow.style.transform = 'rotate(0deg)'
+      if (searchContainer.style.display !== 'none') {
+        searchContainer.style.display = 'none'
+        searchContainer.style.opacity = '0'
+        searchContainer.style.maxHeight = '0'
+      }
+    }
 
     // 插入到目标位置 - 在 placeholder 的下方
     const placeholderElement = targetElement.querySelector('.orca-block-editor-placeholder')
@@ -3186,7 +3232,7 @@ export class PageDisplay {
    */
   private shouldDisplay(): boolean {
     const rootBlockId = this.getCurrentRootBlockId()
-    return rootBlockId !== null && !this.isCollapsed && this.isInitialized
+    return rootBlockId !== null && !this.getCurrentPageCollapseState() && this.isInitialized
   }
   
   /**
