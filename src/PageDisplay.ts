@@ -2105,20 +2105,13 @@ export class PageDisplay {
       return
     }
 
-    // 如果当前页面处于折叠状态，不显示内容
-    if (this.getCurrentPageCollapseState()) {
-      this.log("PageDisplay: Current page is collapsed, not displaying content")
-      this.removeDisplay()
-      return
-    }
-
     // 获取所有需要的数据
     const data = await this.gatherAllData(rootBlockId)
     
     // 处理数据并创建显示项目
     const items = await this.processDataToItems(data)
     
-    // 创建显示
+    // 创建显示（无论是否折叠都要创建，折叠状态在创建时处理）
     this.createDisplayFromItems(items, data)
   }
 
@@ -3232,7 +3225,7 @@ export class PageDisplay {
    */
   private shouldDisplay(): boolean {
     const rootBlockId = this.getCurrentRootBlockId()
-    return rootBlockId !== null && !this.getCurrentPageCollapseState() && this.isInitialized
+    return rootBlockId !== null && this.isInitialized
   }
   
   /**
