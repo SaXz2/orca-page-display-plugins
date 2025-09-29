@@ -1014,7 +1014,7 @@ export class PageDisplay {
   private getCurrentPanelId(): string {
     const activePanel = document.querySelector('.orca-panel.active')
     if (activePanel) {
-      // 尝试获取面板的唯一标识
+      // 优先使用 data-panel-id，然后回退到 id，最后使用 className
       const panelId = activePanel.getAttribute('data-panel-id') || 
                      activePanel.getAttribute('id') || 
                      activePanel.className
@@ -1167,7 +1167,8 @@ export class PageDisplay {
       })
       
       if (hasPageSwitch) {
-        this.updateDisplay() // 立即更新显示
+        // 面板切换时，只更新当前聚焦面板的显示，保持其他面板的显示状态
+        this.updateCurrentPanelDisplay()
       }
     })
     
@@ -2049,6 +2050,22 @@ export class PageDisplay {
     // 立即执行更新
       this.performUpdate()
   }
+
+  /**
+   * 更新当前面板的显示
+   * 只更新当前聚焦面板的显示，不影响其他面板
+   */
+  private updateCurrentPanelDisplay() {
+    this.log("PageDisplay: updateCurrentPanelDisplay called")
+    
+    // 清除之前的定时器
+    if (this.updateTimeout) {
+      clearTimeout(this.updateTimeout)
+    }
+    
+    // 立即执行当前面板更新
+    this.performCurrentPanelUpdate()
+  }
   
   /**
    * 强制更新显示（跳过防抖）
@@ -2116,6 +2133,40 @@ export class PageDisplay {
   }
 
   /**
+   * 执行当前面板更新逻辑
+   * 只更新当前聚焦面板的显示，保持其他面板的显示状态
+   */
+  private async performCurrentPanelUpdate() {
+    this.log("performCurrentPanelUpdate called")
+    
+    const rootBlockId = this.getCurrentRootBlockId()
+    const currentPanelId = this.getCurrentPanelId()
+    this.log("rootBlockId =", rootBlockId, "currentPanelId =", currentPanelId)
+    
+    // 检查当前面板是否需要跳过更新
+    if (this.shouldSkipCurrentPanelUpdate(rootBlockId, currentPanelId)) {
+      return
+    }
+    
+    this.lastRootBlockId = rootBlockId
+    
+    if (!rootBlockId) {
+      this.log("PageDisplay: No root block ID, removing current panel display")
+      this.removeDisplay(currentPanelId)
+      return
+    }
+
+    // 获取所有需要的数据
+    const data = await this.gatherAllData(rootBlockId)
+    
+    // 处理数据并创建显示项目
+    const items = await this.processDataToItems(data)
+    
+    // 只更新当前面板的显示
+    this.createCurrentPanelDisplay(items, data, currentPanelId)
+  }
+
+  /**
    * 检查是否应该跳过更新
    */
   private shouldSkipUpdate(rootBlockId: DbId | null): boolean {
@@ -2124,6 +2175,20 @@ export class PageDisplay {
     
     if (rootBlockId === this.lastRootBlockId && container && container.parentNode) {
       this.log("Root block ID unchanged and display exists for current panel, skipping update")
+      return true
+    }
+    
+    return false
+  }
+
+  /**
+   * 检查当前面板是否应该跳过更新
+   */
+  private shouldSkipCurrentPanelUpdate(rootBlockId: DbId | null, panelId: string): boolean {
+    const container = this.containers.get(panelId)
+    
+    if (rootBlockId === this.lastRootBlockId && container && container.parentNode) {
+      this.log("Root block ID unchanged and display exists for current panel, skipping current panel update")
       return true
     }
     
@@ -2419,6 +2484,27 @@ export class PageDisplay {
       this.updateQueryListButton()
     } catch (error) {
       this.logError("PageDisplay: Failed to create display:", error)
+      this.handleDisplayError(error)
+    }
+  }
+
+  /**
+   * 为当前面板创建显示
+   * 只更新指定面板的显示，不影响其他面板
+   */
+  private createCurrentPanelDisplay(items: ProcessedItemsResult, data: GatheredData, panelId: string) {
+    const { items: uniqueItems, tagBlockIds, inlineRefIds, containedInBlockIds } = items
+    
+    this.log("PageDisplay: Creating current panel display with", uniqueItems.length, "unique items for panel", panelId)
+    
+    try {
+      this.createDisplayForPanel(uniqueItems, tagBlockIds, inlineRefIds, containedInBlockIds, panelId)
+      this.retryCount = 0 // 重置重试计数
+      
+      // 更新当前面板的查询列表按钮状态
+      this.updateQueryListButton()
+    } catch (error) {
+      this.logError("PageDisplay: Failed to create current panel display:", error)
       this.handleDisplayError(error)
     }
   }
@@ -3171,22 +3257,405 @@ export class PageDisplay {
 
     // 插入到目标位置 - 在 placeholder 的下方
     const placeholderElement = targetElement.querySelector('.orca-block-editor-placeholder')
-    this.log("PageDisplay: placeholderElement =", placeholderElement)
+    this.log("PageDisplay: placeholderElement found:", placeholderElement !== null)
+    this.log("PageDisplay: targetElement:", targetElement)
+    
+    let insertSuccess = false
+    let insertMethod = ""
     
     if (placeholderElement) {
-      this.log("PageDisplay: Inserting after placeholder")
-      placeholderElement.parentNode?.insertBefore(container, placeholderElement.nextSibling)
+      try {
+        this.log("PageDisplay: Checking parentNode and nextSibling...")
+        const parentNode = placeholderElement.parentNode
+        const nextSibling = placeholderElement.nextSibling
+        
+        this.log("PageDisplay: parentNode:", parentNode)
+        this.log("PageDisplay: nextSibling:", nextSibling)
+        
+        if (parentNode) {
+          if (nextSibling) {
+            // nextSibling存在，正常插入
+            this.log("PageDisplay: Inserting before nextSibling")
+            parentNode.insertBefore(container, nextSibling)
+            insertMethod = "insertBefore-nextSibling"
+          } else {
+            // nextSibling为null，插入到父元素末尾
+            this.log("PageDisplay: nextSibling is null, appending to parent")
+            parentNode.appendChild(container)
+            insertMethod = "appendChild-parent"
+          }
+          insertSuccess = true
+        } else {
+          this.logWarn("PageDisplay: parentNode is null, falling back to targetElement")
+          targetElement.appendChild(container)
+          insertMethod = "appendChild-targetElement"
+          insertSuccess = true
+        }
+      } catch (error) {
+        this.logError("PageDisplay: Insert before failed:", error)
+        // 插入失败，回退到targetElement
+        targetElement.appendChild(container)
+        insertMethod = "appendChild-fallback"
+        insertSuccess = true
+      }
     } else {
-      this.log("PageDisplay: Inserting at end of target element")
-      // 如果找不到 placeholder，就插入到父元素的末尾
+      this.log("PageDisplay: No placeholder found, inserting at end of target element")
       targetElement.appendChild(container)
+      insertMethod = "appendChild-noPlaceholder"
+      insertSuccess = true
+    }
+    
+    // 验证插入是否成功
+    if (insertSuccess) {
+      setTimeout(() => {
+        const stillInDOM = document.contains(container)
+        const hasParent = container.parentNode !== null
+        const containerVisible = container.offsetHeight > 0
+        
+        this.log(`PageDisplay: Insert verification (${insertMethod}):`)
+        this.log("  - Still in DOM:", stillInDOM)
+        this.log("  - Has parent:", hasParent)
+        this.log("  - Parent element:", container.parentNode)
+        this.log("  - Container visible:", containerVisible)
+        
+        if (!stillInDOM) {
+          this.logError("PageDisplay: Container was removed from DOM! Attempting recovery...")
+          // 尝试重新插入到相同的目标位置
+          setTimeout(() => {
+            if (targetElement && !document.contains(container)) {
+              try {
+                targetElement.appendChild(container)
+                this.log("PageDisplay: Recovery insert attempted")
+              } catch (recoveryError) {
+                this.logError("PageDisplay: Recovery insert failed:", recoveryError)
+              }
+            }
+          }, 100)
+        }
+      }, 50) // 等待DOM稳定
     }
     
     // 存储容器引用
     this.containers.set(panelId, container)
     
-    this.log("PageDisplay: Container inserted, parent =", container.parentNode)
-    this.log("PageDisplay: Container visible =", container.offsetHeight > 0)
+    this.log("PageDisplay: Container inserted using method:", insertMethod)
+    this.log("PageDisplay: Container parent:", container.parentNode)
+    this.log("PageDisplay: Container visible:", container.offsetHeight > 0)
+    
+    // 创建查询列表控制按钮
+    this.createQueryListToggleButton()
+    this.updateQueryListButton()
+  }
+
+  /**
+   * 为指定面板创建显示元素
+   * 只影响指定面板，不影响其他面板
+   * @param items 要显示的项目列表
+   * @param tagBlockIds 标签块ID列表
+   * @param inlineRefIds 内联引用块ID列表
+   * @param containedInBlockIds 包含于块ID列表
+   * @param panelId 目标面板ID
+   */
+  private createDisplayForPanel(items: PageDisplayItem[], tagBlockIds: DbId[] = [], inlineRefIds: DbId[] = [], containedInBlockIds: DbId[] = [], panelId: string) {
+    this.log("PageDisplay: createDisplayForPanel called with", items.length, "items for panel", panelId)
+    this.log("PageDisplay: Items details:", items)
+    this.log("PageDisplay: Tag block IDs:", tagBlockIds)
+    
+    // 移除指定面板的现有显示
+    this.removeDisplay(panelId)
+
+    // 查找目标位置，支持重试
+    let targetElement = this.findTargetElement()
+    
+    // 如果找不到目标元素，延迟重试
+    if (!targetElement) {
+      this.log("PageDisplay: No target element found, retrying in 500ms...")
+      setTimeout(() => {
+        targetElement = this.findTargetElement()
+        if (targetElement) {
+          this.createDisplayForPanel(items, tagBlockIds, inlineRefIds, containedInBlockIds, panelId)
+        } else {
+          this.logError("PageDisplay: Still no target element found after retry")
+          throw new Error("No target element found")
+        }
+      }, 500)
+      return
+    }
+
+    // 创建容器
+    const container = document.createElement('div')
+    container.setAttribute('data-panel-id', panelId) // 标记所属面板
+    this.applyStyles(container, 'page-display-container')
+
+    // 创建标题容器
+    const titleContainer = document.createElement('div')
+    this.applyStyles(titleContainer, 'page-display-title-container')
+    
+    // 创建左侧内容容器
+    const leftContent = document.createElement('div')
+    this.applyStyles(leftContent, 'page-display-left-content')
+    
+    // 创建折叠箭头
+    const arrow = document.createElement('span')
+    arrow.textContent = '▶'
+    this.applyStyles(arrow, 'page-display-arrow')
+    
+    // 设置初始状态：根据当前页面状态设置箭头方向
+    if (!this.getCurrentPageCollapseState()) {
+      arrow.style.transform = 'rotate(90deg)'
+    }
+    
+    // 创建标题文本
+    const title = document.createElement('span')
+    title.textContent = '页面空间'
+    this.applyStyles(title, 'page-display-title')
+    
+    // 创建页面计数
+    const pageCount = document.createElement('span')
+    pageCount.textContent = `(${items.length})`
+    this.applyStyles(pageCount, 'page-display-count')
+    
+    // 组装标题容器
+    leftContent.appendChild(arrow)
+    leftContent.appendChild(title)
+    leftContent.appendChild(pageCount)
+    titleContainer.appendChild(leftContent)
+    
+    // 创建搜索容器
+    const searchContainer = document.createElement('div')
+    this.applyStyles(searchContainer, 'page-display-search-container')
+    
+    // 创建搜索图标
+    const searchIcon = document.createElement('i')
+    searchIcon.textContent = '🔍'
+    this.applyStyles(searchIcon, 'page-display-search-icon')
+    
+    // 创建搜索输入框
+    const searchInput = document.createElement('input')
+    searchInput.type = 'text'
+    searchInput.placeholder = '搜索页面...'
+    this.applyStyles(searchInput, 'page-display-search-input')
+    
+    // 组装搜索容器
+    searchContainer.appendChild(searchIcon)
+    searchContainer.appendChild(searchInput)
+    
+    // 创建项目列表
+    const list = document.createElement('ul')
+    this.applyStyles(list, 'page-display-list')
+    
+    // 存储原始项目列表用于搜索
+    const originalItems = [...items]
+    
+    // 创建项目元素的函数
+    const createItemElement = (item: PageDisplayItem) => {
+      const itemElement = document.createElement('li')
+      this.applyStyles(itemElement, 'page-display-item')
+      
+      // 创建图标
+      if (this.showIcons) {
+        const icon = document.createElement('span')
+        this.applyStyles(icon, 'page-display-item-icon')
+        
+        // 根据项目类型设置图标
+        if (item.itemType === 'tag') {
+          icon.textContent = '🏷️'
+        } else if (item.itemType === 'referenced') {
+          icon.textContent = '📄'
+        } else if (item.itemType === 'referencing-alias') {
+          icon.textContent = '🔗'
+        } else if (item.itemType === 'child-referenced-alias') {
+          icon.textContent = '📋'
+        } else if (item.itemType === 'backref-alias-blocks') {
+          icon.textContent = '↩️'
+        } else {
+          icon.textContent = '📄'
+        }
+        
+        itemElement.appendChild(icon)
+      }
+      
+      // 创建文本
+      const text = document.createElement('span')
+      text.textContent = item.text
+      this.applyStyles(text, 'page-display-item-text')
+      
+      // 应用多行/单行样式
+      this.applyLineStyles(text, this.multiLine)
+      
+      itemElement.appendChild(text)
+      
+      // 添加点击事件
+      itemElement.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        this.openBlock(item.id)
+      })
+      
+      return itemElement
+    }
+    
+    // 过滤项目的函数
+    const filterItems = (keyword: string) => {
+      if (!keyword.trim()) return originalItems
+      
+      const lowerKeyword = keyword.toLowerCase()
+      return originalItems.filter(item => {
+        // 优先使用可搜索文本
+        if (item.searchableText) {
+          return item.searchableText.toLowerCase().includes(lowerKeyword)
+        }
+        
+        // 回退到基本文本匹配
+        return item.text.toLowerCase().includes(lowerKeyword) ||
+               item.aliases.some(alias => alias.toLowerCase().includes(lowerKeyword))
+      })
+    }
+    
+    // 更新显示的函数
+    const updateDisplay = () => {
+      const searchTerm = searchInput.value
+      const filteredItems = filterItems(searchTerm)
+      
+      // 更新页面统计
+      const totalCount = originalItems.length
+      const filteredCount = filteredItems.length
+      if (searchTerm.trim()) {
+        pageCount.textContent = `(${filteredCount}/${totalCount})`
+      } else {
+        pageCount.textContent = `(${totalCount})`
+      }
+      
+      // 清空列表
+      list.innerHTML = ''
+      
+      // 添加过滤后的项目
+      filteredItems.forEach(item => {
+        const itemElement = createItemElement(item)
+        list.appendChild(itemElement)
+      })
+    }
+    
+    // 添加搜索事件监听
+    searchInput.addEventListener('input', updateDisplay)
+    
+    // 添加折叠/展开功能
+    arrow.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      const isCollapsed = arrow.style.transform === 'rotate(0deg)' || arrow.style.transform === ''
+      if (isCollapsed) {
+        arrow.style.transform = 'rotate(90deg)'
+        searchContainer.style.display = 'block'
+        searchContainer.style.opacity = '1'
+        list.style.display = 'block'
+        this.setCurrentPageCollapseState(false)
+      } else {
+        arrow.style.transform = 'rotate(0deg)'
+        searchContainer.style.display = 'none'
+        searchContainer.style.opacity = '0'
+        list.style.display = 'none'
+        this.setCurrentPageCollapseState(true)
+      }
+    })
+    
+    // 组装容器
+    container.appendChild(titleContainer)
+    container.appendChild(searchContainer)
+    container.appendChild(list)
+    
+    // 应用多列样式
+    if (this.multiColumn) {
+      this.applyMultiColumnStyles(list)
+    }
+    
+    // 插入到目标位置 - 改进的插入逻辑
+    const placeholderElement = targetElement.querySelector('.orca-block-editor-placeholder')
+    this.log("PageDisplay: (createDisplayForPanel) placeholderElement found:", placeholderElement !== null)
+    this.log("PageDisplay: (createDisplayForPanel) targetElement:", targetElement)
+    
+    let insertSuccess = false
+    let insertMethod = ""
+    
+    if (placeholderElement) {
+      try {
+        this.log("PageDisplay: (createDisplayForPanel) Checking parentNode and nextSibling...")
+        const parentNode = placeholderElement.parentNode
+        const nextSibling = placeholderElement.nextSibling
+        
+        this.log("PageDisplay: (createDisplayForPanel) parentNode:", parentNode)
+        this.log("PageDisplay: (createDisplayForPanel) nextSibling:", nextSibling)
+        
+        if (parentNode) {
+          if (nextSibling) {
+            // nextSibling存在，正常插入
+            this.log("PageDisplay: (createDisplayForPanel) Inserting before nextSibling")
+            parentNode.insertBefore(container, nextSibling)
+            insertMethod = "insertBefore-nextSibling"
+          } else {
+            // nextSibling为null，插入到父元素末尾
+            this.log("PageDisplay: (createDisplayForPanel) nextSibling is null, appending to parent")
+            parentNode.appendChild(container)
+            insertMethod = "appendChild-parent"
+          }
+          insertSuccess = true
+        } else {
+          this.logWarn("PageDisplay: (createDisplayForPanel) parentNode is null, falling back to targetElement")
+          targetElement.appendChild(container)
+          insertMethod = "appendChild-targetElement"
+          insertSuccess = true
+        }
+      } catch (error) {
+        this.logError("PageDisplay: (createDisplayForPanel) Insert before failed:", error)
+        // 插入失败，回退到targetElement
+        targetElement.appendChild(container)
+        insertMethod = "appendChild-fallback"
+        insertSuccess = true
+      }
+    } else {
+      this.log("PageDisplay: (createDisplayForPanel) No placeholder found, inserting at end of target element")
+      targetElement.appendChild(container)
+      insertMethod = "appendChild-noPlaceholder"
+      insertSuccess = true
+    }
+    
+    // 验证插入是否成功
+    if (insertSuccess) {
+      setTimeout(() => {
+        const stillInDOM = document.contains(container)
+        const hasParent = container.parentNode !== null
+        const containerVisible = container.offsetHeight > 0
+        
+        this.log(`PageDisplay: (createDisplayForPanel) Insert verification (${insertMethod}):`)
+        this.log("  - Still in DOM:", stillInDOM)
+        this.log("  - Has parent:", hasParent)
+        this.log("  - Parent element:", container.parentNode)
+        this.log("  - Container visible:", containerVisible)
+        
+        if (!stillInDOM) {
+          this.logError("PageDisplay: (createDisplayForPanel) Container was removed from DOM! Attempting recovery...")
+          // 尝试重新插入到相同的目标位置
+          setTimeout(() => {
+            if (targetElement && !document.contains(container)) {
+              try {
+                targetElement.appendChild(container)
+                this.log("PageDisplay: (createDisplayForPanel) Recovery insert attempted")
+              } catch (recoveryError) {
+                this.logError("PageDisplay: (createDisplayForPanel) Recovery insert failed:", recoveryError)
+              }
+            }
+          }, 100)
+        }
+      }, 50) // 等待DOM稳定
+    }
+    
+    // 存储容器引用
+    this.containers.set(panelId, container)
+    
+    this.log("PageDisplay: Container inserted for panel", panelId, "using method:", insertMethod)
+    this.log("PageDisplay: Container parent:", container.parentNode)
+    this.log("PageDisplay: Container visible:", container.offsetHeight > 0)
     
     // 创建查询列表控制按钮
     this.createQueryListToggleButton()
@@ -3277,7 +3746,33 @@ export class PageDisplay {
    */
   private findTargetElement(): Element | null {
     const strategies = [
-      // 策略1: 查找当前活跃面板中的编辑器容器
+      // 策略1: 查找当前活跃面板中的orca-hideable容器（非隐藏状态）
+      () => {
+        const activePanel = document.querySelector('.orca-panel.active')
+        if (activePanel) {
+          this.log("PageDisplay: 找到活跃面板，查找orca-hideable容器")
+          // 查找非隐藏的orca-hideable
+          const hideableElements = activePanel.querySelectorAll('.orca-hideable')
+          for (const hideableElement of hideableElements) {
+            // 检查是否包含hidden类
+            if (!hideableElement.classList.contains('orca-hideable-hidden')) {
+              this.log("PageDisplay: 找到非隐藏的orca-hideable:", hideableElement)
+              const noneEditableElement = hideableElement.querySelector('.orca-block-editor-none-editable')
+              if (noneEditableElement) {
+                const placeholderElement = noneEditableElement.querySelector('.orca-block-editor-placeholder')
+                if (placeholderElement) {
+                  this.log("PageDisplay: 在orca-hideable中找到目标元素")
+                  return noneEditableElement
+                }
+              }
+            } else {
+              this.log("PageDisplay: 隐藏的orca-hideable，跳过:", hideableElement)
+            }
+          }
+        }
+        return null
+      },
+      // 策略2: 查找当前活跃面板中的编辑器容器
       () => {
         const activePanel = document.querySelector('.orca-panel.active')
         if (activePanel) {
@@ -3293,7 +3788,7 @@ export class PageDisplay {
         }
         return null
       },
-      // 策略2: 查找当前活跃面板中的任何包含placeholder的编辑器元素
+      // 策略3: 查找当前活跃面板中的任何包含placeholder的编辑器元素
       () => {
         const activePanel = document.querySelector('.orca-panel.active')
         if (activePanel) {
@@ -3305,7 +3800,7 @@ export class PageDisplay {
         }
         return null
       },
-      // 策略3: 查找当前活跃面板中的编辑器相关容器
+      // 策略4: 查找当前活跃面板中的编辑器相关容器
       () => {
         const activePanel = document.querySelector('.orca-panel.active')
         if (activePanel) {
@@ -3319,7 +3814,7 @@ export class PageDisplay {
         }
         return null
       },
-      // 策略4: 降级到全局查找（兼容单面板模式）
+      // 策略5: 降级到全局查找（兼容单面板模式）
       () => {
     const noneEditableElement = document.querySelector('.orca-block-editor-none-editable')
         if (noneEditableElement) {
@@ -3330,7 +3825,7 @@ export class PageDisplay {
         }
       return null
       },
-      // 策略5: 查找任何包含placeholder的编辑器元素
+      // 策略6: 查找任何包含placeholder的编辑器元素
       () => {
         const placeholderElement = document.querySelector('.orca-block-editor-placeholder')
         if (placeholderElement) {
@@ -3338,13 +3833,13 @@ export class PageDisplay {
         }
         return null
       },
-      // 策略6: 查找任何编辑器相关容器
+      // 策略7: 查找任何编辑器相关容器
       () => {
         return document.querySelector('[class*="block-editor"]') ||
                document.querySelector('[class*="editor"]') ||
                document.querySelector('.editor-container')
       },
-      // 策略7: 降级到body
+      // 策略8: 降级到body
       () => document.body
     ]
     
