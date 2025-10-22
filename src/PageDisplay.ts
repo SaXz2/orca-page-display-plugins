@@ -319,6 +319,7 @@ class StyleManager {
       'page-display-title',
       'page-display-count',
       'page-display-search-icon',
+      'page-display-filter-icon',
       'page-display-search-container',
       'page-display-search-input',
       'page-display-list',
@@ -361,7 +362,6 @@ class StyleManager {
         element.style.cssText = `
           display: flex;
           align-items: center;
-          justify-content: space-between;
           margin-bottom: 12px;
           cursor: pointer;
         `
@@ -408,22 +408,66 @@ class StyleManager {
         
       case 'page-display-search-icon':
         element.style.cssText = `
+          width: 28px;
+          height: 28px;
+          background: ${colors.background};
+          border: 1px solid ${colors.border};
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          margin-left: 8px;
+          opacity: 0;
+          transition: all 0.2s ease;
+          flex-shrink: 0;
           font-size: 14px;
           color: ${colors.textMuted};
-          cursor: pointer;
-          padding: 4px;
-          border-radius: 4px;
-          transition: all 0.2s ease;
         `
         
         // 添加悬停效果
         element.addEventListener('mouseenter', () => {
+          element.style.opacity = '1'
           element.style.background = colors.backgroundHover
           element.style.color = colors.text
         })
         
         element.addEventListener('mouseleave', () => {
-          element.style.background = 'transparent'
+          element.style.opacity = '0'
+          element.style.background = colors.background
+          element.style.color = colors.textMuted
+        })
+        break
+        
+      case 'page-display-filter-icon':
+        element.style.cssText = `
+          width: 28px;
+          height: 28px;
+          background: ${colors.background};
+          border: 1px solid ${colors.border};
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          margin-left: 8px;
+          opacity: 0;
+          transition: all 0.2s ease;
+          flex-shrink: 0;
+          font-size: 14px;
+          color: ${colors.textMuted};
+        `
+        
+        // 添加悬停效果
+        element.addEventListener('mouseenter', () => {
+          element.style.opacity = '1'
+          element.style.background = colors.backgroundHover
+          element.style.color = colors.text
+        })
+        
+        element.addEventListener('mouseleave', () => {
+          element.style.opacity = '0'
+          element.style.background = colors.background
           element.style.color = colors.textMuted
         })
         break
@@ -433,7 +477,9 @@ class StyleManager {
           margin-bottom: 12px;
           display: none;
           opacity: 0;
-          transition: opacity 0.2s ease;
+          max-height: 0;
+          overflow: hidden;
+          transition: opacity 0.2s ease, max-height 0.2s ease;
         `
         break
         
@@ -533,21 +579,21 @@ class StyleManager {
           opacity: 0;
           transition: all 0.2s ease;
           flex-shrink: 0;
+          font-size: 14px;
+          color: ${colors.textMuted};
         `
         
         // 添加悬停效果
         element.addEventListener('mouseenter', () => {
           element.style.opacity = '1'
           element.style.background = colors.backgroundHover
-          element.style.borderColor = this.isDarkMode() ? '#4a9eff' : '#007bff'
-          element.style.transform = 'scale(1.05)'
+          element.style.color = colors.text
         })
         
         element.addEventListener('mouseleave', () => {
           element.style.opacity = '0'
           element.style.background = colors.background
-          element.style.borderColor = colors.border
-          element.style.transform = 'scale(1)'
+          element.style.color = colors.textMuted
         })
         break
     }
@@ -1141,8 +1187,14 @@ export class PageDisplay {
     panel.className = 'page-display-type-filter-panel'
     this.applyStyles(panel, 'page-display-type-filter-panel')
     
-    // 设置初始显示状态
-    panel.style.display = this.showTypeFilters ? 'block' : 'none'
+    // 设置初始显示状态和透明度过渡
+    panel.style.cssText = `
+      display: ${this.showTypeFilters ? 'block' : 'none'};
+      opacity: ${this.showTypeFilters ? '1' : '0'};
+      visibility: ${this.showTypeFilters ? 'visible' : 'hidden'};
+      transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+      transform: translateY(${this.showTypeFilters ? '0' : '-10px'});
+    `
     
     // 创建面板标题和按钮容器
     const titleContainer = document.createElement('div')
@@ -1172,7 +1224,7 @@ export class PageDisplay {
     // 设置按钮水平排列
     titleButtons.style.cssText = `
       display: flex;
-      gap: 8px;
+      gap: 4px;
       align-items: center;
     `
     
@@ -1182,12 +1234,12 @@ export class PageDisplay {
     
     // 设置按钮样式
     selectAllBtn.style.cssText = `
-      padding: 4px 8px;
-      font-size: 12px;
+      padding: 3px 6px;
+      font-size: 11px;
       background: rgba(255, 255, 255, 0.1);
       color: white;
       border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 4px;
+      border-radius: 3px;
       cursor: pointer;
       transition: all 0.2s;
     `
@@ -1229,12 +1281,12 @@ export class PageDisplay {
     
     // 设置确认按钮样式（绿色主题）
     confirmBtn.style.cssText = `
-      padding: 4px 8px;
-      font-size: 12px;
+      padding: 3px 6px;
+      font-size: 11px;
       background: rgba(34, 197, 94, 0.2);
       color: white;
       border: 1px solid rgba(34, 197, 94, 0.4);
-      border-radius: 4px;
+      border-radius: 3px;
       cursor: pointer;
       transition: all 0.2s;
     `
@@ -1256,9 +1308,16 @@ export class PageDisplay {
       // 强制更新显示
       this.forceUpdate()
       
-      // 隐藏面板
+      // 隐藏面板 - 立即设置display为none，避免空白区域
       this.toggleTypeFilters()
-      panel.style.display = 'none'
+      
+      // 延迟隐藏面板，确保forceUpdate完成后再隐藏
+      setTimeout(() => {
+        panel.style.display = 'none'
+        panel.style.opacity = '0'
+        panel.style.visibility = 'hidden'
+        panel.style.transform = 'translateY(-10px)'
+      }, 0)
     })
     
     const cancelBtn = document.createElement('button')
@@ -1267,12 +1326,12 @@ export class PageDisplay {
     
     // 设置取消按钮样式（红色主题）
     cancelBtn.style.cssText = `
-      padding: 4px 8px;
-      font-size: 12px;
+      padding: 3px 6px;
+      font-size: 11px;
       background: rgba(239, 68, 68, 0.2);
       color: white;
       border: 1px solid rgba(239, 68, 68, 0.4);
-      border-radius: 4px;
+      border-radius: 3px;
       cursor: pointer;
       transition: all 0.2s;
     `
@@ -1290,9 +1349,12 @@ export class PageDisplay {
         const type = input.id.replace('type-filter-', '') as PageDisplayItemType
         input.checked = this.getTypeFilter(type)
       })
-      // 隐藏面板
+      // 隐藏面板 - 立即设置display为none，避免空白区域
       this.toggleTypeFilters()
       panel.style.display = 'none'
+      panel.style.opacity = '0'
+      panel.style.visibility = 'hidden'
+      panel.style.transform = 'translateY(-10px)'
     })
     
     titleButtons.appendChild(selectAllBtn)
@@ -3529,61 +3591,8 @@ export class PageDisplay {
     button.setAttribute('data-hidden', 'false')
     button.title = '隐藏底部查询别名块'
     
-    // 使用JavaScript设置样式
-    button.style.cssText = `
-      position: relative;
-      width: 32px;
-      height: 32px;
-      background: var(--orca-color-bg-2);
-      border: 1px solid var(--orca-color-border);
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      margin-left: 8px;
-      opacity: 0;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      flex-shrink: 0;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    `
-    
-    // 添加悬停效果
-    button.addEventListener('mouseenter', () => {
-      button.style.opacity = '1'
-      button.style.background = 'var(--orca-color-bg-3)'
-      button.style.transform = 'scale(1.08)'
-      button.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)'
-      button.style.borderColor = 'var(--orca-color-primary-5)'
-      
-      // 悬停时更新图标颜色
-      const icon = button.querySelector('i')
-      if (icon) {
-        if (this.queryListHidden) {
-          icon.style.color = 'var(--orca-color-dangerous-6)'
-        } else {
-          icon.style.color = 'var(--orca-color-text-1)'
-        }
-      }
-    })
-    
-    button.addEventListener('mouseleave', () => {
-      button.style.opacity = '0'
-      button.style.background = 'var(--orca-color-bg-2)'
-      button.style.transform = 'scale(1)'
-      button.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)'
-      button.style.borderColor = 'var(--orca-color-border)'
-      
-      // 鼠标离开时恢复图标颜色
-      const icon = button.querySelector('i')
-      if (icon) {
-        if (this.queryListHidden) {
-          icon.style.color = 'var(--orca-color-dangerous-5)'
-        } else {
-          icon.style.color = 'var(--orca-color-text-1)'
-        }
-      }
-    })
+    // 使用StyleManager应用统一样式
+    this.styleManager.applyStyles(button, 'page-display-query-list-toggle')
     
     // 添加点击事件
     button.addEventListener('click', () => {
@@ -3622,22 +3631,18 @@ export class PageDisplay {
 
   // 应用查询列表隐藏逻辑
   private applyQueryListHideLogic() {
-    // 检查并隐藏符合条件的元素
-    document.querySelectorAll('.orca-query-list').forEach((list, listIndex) => {
-      // 检查 .orca-query-list 是否包含特定块
-      const hasTargetBlock = list.querySelector('.orca-block.orca-container.orca-block-postfix.orca-query-list-block-block')
-      if (hasTargetBlock) {
-        
-        // 查找该列表中的 .orca-query-list-block 元素
-        const queryBlocks = list.querySelectorAll('.orca-query-list-block')
-        queryBlocks.forEach((queryBlock, blockIndex) => {
-          // 检查该 .orca-query-list-block 是否也包含特定块
-          const hasNestedTargetBlock = queryBlock.querySelector('.orca-block.orca-container.orca-block-postfix.orca-query-list-block-block')
-          if (hasNestedTargetBlock) {
-            // 根据持久化状态决定是否隐藏
-            (queryBlock as HTMLElement).style.display = this.queryListHidden ? 'none' : ''
-          }
-        })
+    // 使用更高效的查询方式，直接查找目标元素
+    const targetSelector = '.orca-block.orca-container.orca-block-postfix.orca-query-list-block-block'
+    const targetBlocks = document.querySelectorAll(targetSelector)
+    
+    // 批量处理，减少DOM操作
+    const displayValue = this.queryListHidden ? 'none' : ''
+    
+    targetBlocks.forEach((targetBlock) => {
+      // 找到包含该目标块的查询列表块
+      const queryBlock = targetBlock.closest('.orca-query-list-block')
+      if (queryBlock) {
+        (queryBlock as HTMLElement).style.display = displayValue
       }
     })
     
@@ -3749,11 +3754,11 @@ export class PageDisplay {
     titleContainer.appendChild(searchIcon)
     titleContainer.appendChild(filterIcon)
     
+    container.appendChild(titleContainer)
+    
     // 创建类型过滤控制面板
     const typeFilterPanel = this.createTypeFilterPanel()
     container.appendChild(typeFilterPanel)
-    
-    container.appendChild(titleContainer)
     
     // 折叠状态和搜索状态
     let isTransitioning = false
@@ -3793,12 +3798,24 @@ export class PageDisplay {
     
     filterIcon.addEventListener('click', () => {
       this.toggleTypeFilters()
-      // 更新过滤面板显示状态
-      typeFilterPanel.style.display = this.showTypeFilters ? 'block' : 'none'
       
-      // 如果面板显示，需要更新复选框状态以反映当前过滤状态
       if (this.showTypeFilters) {
+        // 显示面板 - 使用透明度过渡
+        typeFilterPanel.style.display = 'block'
+        // 强制重排以确保初始状态正确
+        typeFilterPanel.offsetHeight
+        typeFilterPanel.style.opacity = '1'
+        typeFilterPanel.style.visibility = 'visible'
+        typeFilterPanel.style.transform = 'translateY(0)'
+        
+        // 更新复选框状态
         this.updateTypeFilterPanelCheckboxes(typeFilterPanel)
+      } else {
+        // 隐藏面板 - 立即设置display为none，避免空白区域
+        typeFilterPanel.style.display = 'none'
+        typeFilterPanel.style.opacity = '0'
+        typeFilterPanel.style.visibility = 'hidden'
+        typeFilterPanel.style.transform = 'translateY(-10px)'
       }
     })
     
@@ -3891,23 +3908,28 @@ export class PageDisplay {
       isSearchVisible = !isSearchVisible
       
       if (isSearchVisible) {
+        // 显示搜索框
         searchContainer.style.display = 'block'
+        // 强制重排以确保初始状态正确
+        searchContainer.offsetHeight // Trigger reflow
         searchContainer.style.opacity = '1'
         searchContainer.style.maxHeight = '100px'
         searchIcon.style.opacity = '1'
         searchIcon.style.background = 'var(--page-display-search-bg-hover)'
         searchInput.focus()
       } else {
+        // 隐藏搜索框 - 使用流畅的过渡效果
         searchContainer.style.opacity = '0'
         searchContainer.style.maxHeight = '0'
         searchIcon.style.opacity = '0'
         searchIcon.style.background = 'var(--page-display-search-bg)'
         
+        // 延迟后完全隐藏，避免卡顿
         setTimeout(() => {
           if (!isSearchVisible) {
             searchContainer.style.display = 'none'
           }
-        }, 100)
+        }, 200) // 与transition时间一致
       }
     }
 
@@ -3998,10 +4020,14 @@ export class PageDisplay {
       // 更新页面统计
       const totalCount = originalItems.length
       const filteredCount = filteredItems.length
+      
+      // 添加调试日志
+      this.log(`PageDisplay: 计数更新 - 总数: ${totalCount}, 过滤后: ${filteredCount}, 搜索词: "${searchTerm}"`)
+      
       if (searchTerm.trim()) {
         pageCount.textContent = `(${filteredCount}/${totalCount})`
       } else {
-        pageCount.textContent = `(${totalCount})`
+        pageCount.textContent = `(${filteredCount})`
       }
       
       // 清空现有列表
