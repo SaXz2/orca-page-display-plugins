@@ -631,6 +631,14 @@ class StyleManager {
  */
 type PageDisplayItemType = 'tag' | 'referenced' | 'referencing-alias' | 'child-referenced-alias' | 'backref-alias-blocks'
 
+type DisplayMode = 'flat' | 'grouped'
+type DisplayGroupsMap = Record<PageDisplayItemType, PageDisplayItem[]>
+interface DisplayGroupDefinition {
+  type: PageDisplayItemType
+  title: string
+  icon: string
+}
+
 /**
  * 搜索数据结构
  */
@@ -691,6 +699,8 @@ interface ReferencedBlocksResult {
 interface ProcessedItemsResult {
   /** 处理后的项目列表 */
   items: PageDisplayItem[]
+  /** 分组后的项目列表 */
+  groupedItems: DisplayGroupsMap
   /** 标签块ID列表 */
   tagBlockIds: DbId[]
   /** 内联引用块ID列表 */
@@ -728,8 +738,12 @@ export class PageDisplay {
   private queryListToggleButtons: Map<string, HTMLElement> = new Map()
   /** 插件名称，用于数据存储和API调用 */
   private pluginName: string
+  /** 设置加载完成的任务 */
+  private settingsReady: Promise<void>
   /** DOM变化观察器，用于监听页面变化 */
   private observer: MutationObserver | null = null
+  /** 标签层级观察器 */
+  private tagHierarchyObserver: MutationObserver | null = null
   /** 样式管理器 */
   private styleManager: StyleManager
   /** 日志管理器 */
@@ -754,6 +768,10 @@ export class PageDisplay {
   private multiLine: boolean = false
   /** 控制是否多列显示项目 */
   private multiColumn: boolean = false
+  /** 显示模式 */
+  private displayMode: DisplayMode = 'flat'
+  /** 可用显示模式列表 */
+  private readonly DISPLAY_MODES: DisplayMode[] = ['flat', 'grouped']
   
   // === 状态管理属性 ===
   /** 缓存上次的根块ID，用于避免重复更新 */
@@ -766,7 +784,9 @@ export class PageDisplay {
   private updateTimeout: number | null = null
   /** 定期检查定时器，用于检测页面变化 */
   private periodicCheckInterval: number | null = null
-  
+  /** 页面切换检查定时器 */
+  private pageSwitchCheckInterval: number | null = null
+
   // === 错误处理和重试属性 ===
   /** 当前重试次数 */
   private retryCount: number = 0
@@ -790,7 +810,7 @@ export class PageDisplay {
     this.apiService = new ApiService(this.logger)
     this.errorHandler = new ErrorHandler(this.logger, this.maxRetries)
     // 加载用户设置
-    this.loadSettings()
+    this.settingsReady = this.loadSettings()
     // 调试模式默认关闭
     this.debugMode = false
     
@@ -1035,6 +1055,10 @@ export class PageDisplay {
         this.multiColumn = parsedSettings.multiColumn ?? false
         this.queryListHidden = parsedSettings.queryListHidden ?? false
         this.backrefAliasQueryEnabled = parsedSettings.backrefAliasQueryEnabled ?? false
+        const savedMode = parsedSettings.displayMode
+        if (savedMode === 'flat' || savedMode === 'grouped') {
+          this.displayMode = savedMode
+        }
         // 加载页面折叠状态
         if (parsedSettings.pageCollapseStates) {
           this.pageCollapseStates = new Map(
@@ -1055,6 +1079,7 @@ export class PageDisplay {
         showIcons: this.showIcons,
         multiLine: this.multiLine,
         multiColumn: this.multiColumn,
+        displayMode: this.displayMode,
         queryListHidden: this.queryListHidden,
         backrefAliasQueryEnabled: this.backrefAliasQueryEnabled,
         // 保存页面折叠状态
@@ -1073,29 +1098,139 @@ export class PageDisplay {
    * @param items 原始项目列表
    * @returns 去重后的项目列表
    */
+  private getItemKey(item: PageDisplayItem): string {
+    return `${item.id}-${item.text}`
+  }
+
   private deduplicateItems(items: PageDisplayItem[]): PageDisplayItem[] {
     const seen = new Set<string>()
     const uniqueItems: PageDisplayItem[] = []
-    
+
     for (const item of items) {
-      // 创建唯一标识：优先使用ID，如果ID相同则使用文本内容
-      const key = `${item.id}-${item.text}`
-      
+      const key = this.getItemKey(item)
+
       if (!seen.has(key)) {
         seen.add(key)
         uniqueItems.push(item)
-      } else {
       }
     }
-    
+
     return uniqueItems
+  }
+
+  private createEmptyGroups(): DisplayGroupsMap {
+    return {
+      tag: [],
+      referenced: [],
+      'referencing-alias': [],
+      'child-referenced-alias': [],
+      'backref-alias-blocks': []
+    } as DisplayGroupsMap
+  }
+
+  private getDisplayGroupDefinitions(): DisplayGroupDefinition[] {
+    return [
+      { type: 'tag', title: '标签', icon: '🏷️' },
+      { type: 'referenced', title: '被引用的块', icon: '📄' },
+      { type: 'referencing-alias', title: '引用当前块的别名', icon: '🔗' },
+      { type: 'child-referenced-alias', title: '子块引用的别名', icon: '📋' },
+      { type: 'backref-alias-blocks', title: '反链中的别名', icon: '↩️' }
+    ]
+  }
+
+  private buildGroupedItems(
+    source: Record<PageDisplayItemType, PageDisplayItem[]>,
+    tagBlockIds: DbId[],
+    containedInBlockIds: DbId[]
+  ): DisplayGroupsMap {
+    const result = this.createEmptyGroups()
+    const seen = new Set<string>()
+
+    for (const definition of this.getDisplayGroupDefinitions()) {
+      const groupItems = source[definition.type] ?? []
+      for (const item of groupItems) {
+        const key = this.getItemKey(item)
+        if (seen.has(key)) {
+          continue
+        }
+        seen.add(key)
+        result[definition.type].push(item)
+      }
+    }
+
+    this.sortReferencedGroup(result.referenced, tagBlockIds, containedInBlockIds)
+
+    return result
+  }
+
+  private sortReferencedGroup(items: PageDisplayItem[], tagBlockIds: DbId[], containedInBlockIds: DbId[]): void {
+    items.sort((a, b) => {
+      const aIsPriority = tagBlockIds.includes(a.id) || containedInBlockIds.includes(a.id)
+      const bIsPriority = tagBlockIds.includes(b.id) || containedInBlockIds.includes(b.id)
+
+      if (aIsPriority && !bIsPriority) return -1
+      if (!aIsPriority && bIsPriority) return 1
+      return 0
+    })
+  }
+
+  private cloneGroupedItems(grouped: DisplayGroupsMap): DisplayGroupsMap {
+    const clone = this.createEmptyGroups()
+    for (const definition of this.getDisplayGroupDefinitions()) {
+      clone[definition.type] = [...(grouped[definition.type] ?? [])]
+    }
+    return clone
+  }
+
+  private groupItemsByType(items: PageDisplayItem[]): DisplayGroupsMap {
+    const grouped = this.createEmptyGroups()
+    for (const item of items) {
+      grouped[item.itemType]?.push(item)
+    }
+    return grouped
+  }
+
+  public getDisplayMode(): DisplayMode {
+    return this.displayMode
+  }
+
+  public getDisplayModeLabel(mode: DisplayMode = this.displayMode): string {
+    switch (mode) {
+      case 'grouped':
+        return '分组模式'
+      default:
+        return '列表模式'
+    }
+  }
+
+  public cycleDisplayMode(): DisplayMode {
+    const currentIndex = this.DISPLAY_MODES.indexOf(this.displayMode)
+    const nextIndex = (currentIndex + 1) % this.DISPLAY_MODES.length
+    const nextMode = this.DISPLAY_MODES[nextIndex]
+    this.applyDisplayMode(nextMode)
+    return nextMode
+  }
+
+  private applyDisplayMode(mode: DisplayMode) {
+    if (this.displayMode === mode) {
+      return
+    }
+
+    this.displayMode = mode
+    void this.saveSettings()
+
+    if (this.isInitialized) {
+      this.forceUpdate()
+    }
   }
 
   /**
    * 初始化PageDisplay插件
    * 启动编辑器变化监听、定期检查和显示更新
    */
-  public init() {
+  public async init(): Promise<void> {
+    await this.settingsReady.catch(() => undefined)
+
     this.observeEditorChanges()
     this.startPeriodicCheck()
     this.updateDisplay()
@@ -1125,6 +1260,16 @@ export class PageDisplay {
       this.periodicCheckInterval = null
     }
     
+    if (this.pageSwitchCheckInterval) {
+      clearInterval(this.pageSwitchCheckInterval)
+      this.pageSwitchCheckInterval = null
+    }
+
+    if (this.tagHierarchyObserver) {
+      this.tagHierarchyObserver.disconnect()
+      this.tagHierarchyObserver = null
+    }
+
     // 移除所有显示元素
     this.removeDisplay()
     this.isInitialized = false
@@ -1135,6 +1280,10 @@ export class PageDisplay {
    * 使用MutationObserver监听页面变化，检测页面切换等事件
    */
   private observeEditorChanges() {
+    if (this.observer) {
+      this.observer.disconnect()
+    }
+
     // 使用MutationObserver监听页面切换
     this.observer = new MutationObserver((mutations) => {
       // 检查是否有页面切换相关的变化
@@ -1197,11 +1346,13 @@ export class PageDisplay {
   
   // 启动页面切换检查
   private startPageSwitchCheck() {
-    // 每500ms检查一次页面切换，提高响应速度
-    setInterval(() => {
+    if (this.pageSwitchCheckInterval) {
+      clearInterval(this.pageSwitchCheckInterval)
+    }
+
+    this.pageSwitchCheckInterval = window.setInterval(() => {
       const pageSwitchElement = document.querySelector("#main > div > div.orca-panel.active > div:nth-child(3)")
       if (pageSwitchElement && this.shouldDisplay()) {
-        // 检查是否需要更新显示
         const currentRootBlockId = this.getCurrentRootBlockId()
         if (currentRootBlockId !== this.lastRootBlockId) {
           this.updateDisplay()
@@ -1209,7 +1360,7 @@ export class PageDisplay {
       }
     }, 500)
   }
-  
+
   // 检查是否为页面切换相关元素
   private isPageSwitchElement(element: Element): boolean {
     // 检查元素本身是否是页面切换相关的
@@ -2041,14 +2192,17 @@ export class PageDisplay {
    */
   public updateDisplay() {
     this.log("PageDisplay: updateDisplay called")
-    
-    // 清除之前的定时器
+
     if (this.updateTimeout) {
       clearTimeout(this.updateTimeout)
     }
-    
-    // 立即执行更新
-      this.performUpdate()
+
+    this.updateTimeout = window.setTimeout(() => {
+      this.updateTimeout = null
+      this.performUpdate().catch((error) => {
+        this.logError("PageDisplay: updateDisplay failed:", error)
+      })
+    }, 100)
   }
 
   /**
@@ -2057,14 +2211,17 @@ export class PageDisplay {
    */
   private updateCurrentPanelDisplay() {
     this.log("PageDisplay: updateCurrentPanelDisplay called")
-    
-    // 清除之前的定时器
+
     if (this.updateTimeout) {
       clearTimeout(this.updateTimeout)
     }
-    
-    // 立即执行当前面板更新
-    this.performCurrentPanelUpdate()
+
+    this.updateTimeout = window.setTimeout(() => {
+      this.updateTimeout = null
+      this.performCurrentPanelUpdate().catch((error) => {
+        this.logError("PageDisplay: updateCurrentPanelUpdate failed:", error)
+      })
+    }, 100)
   }
   
   /**
@@ -2080,7 +2237,7 @@ export class PageDisplay {
    * 强制刷新并重新添加元素（暴力解决bug）
    * 完全清理现有元素并重新初始化
    */
-  public forceRefreshAndReinit() {
+  public async forceRefreshAndReinit(): Promise<void> {
     this.log("PageDisplay: 强制刷新并重新添加元素")
     
     // 1. 清理所有现有元素
@@ -2094,7 +2251,7 @@ export class PageDisplay {
     this.retryCount = 0
     
     // 4. 重新初始化
-    this.init()
+    await this.init()
     
     this.log("PageDisplay: 强制刷新完成")
   }
@@ -2105,7 +2262,9 @@ export class PageDisplay {
    */
   private async performUpdate() {
     this.log("performUpdate called")
-    
+
+    await this.settingsReady.catch(() => undefined)
+
     const rootBlockId = this.getCurrentRootBlockId()
     this.log("rootBlockId =", rootBlockId)
     
@@ -2138,7 +2297,9 @@ export class PageDisplay {
    */
   private async performCurrentPanelUpdate() {
     this.log("performCurrentPanelUpdate called")
-    
+
+    await this.settingsReady.catch(() => undefined)
+
     const rootBlockId = this.getCurrentRootBlockId()
     const currentPanelId = this.getCurrentPanelId()
     this.log("rootBlockId =", rootBlockId, "currentPanelId =", currentPanelId)
@@ -2270,50 +2431,35 @@ export class PageDisplay {
     const { childrenTags, referencedResult, containedInBlockIds, referencingAliasBlocks, childReferencedAliasBlocks, backrefAliasBlocks } = data
     const { blocks: referencedBlocks, tagBlockIds, inlineRefIds } = referencedResult
 
-    // 只处理有数据的情况，避免不必要的处理
-    const promises = []
-    
-    if (childrenTags?.length) promises.push(this.processTagItems(childrenTags))
-    else promises.push(Promise.resolve([]))
-    
-    if (referencedBlocks?.length) promises.push(this.processReferencedItems(referencedBlocks, tagBlockIds))
-    else promises.push(Promise.resolve([]))
-    
-    if (containedInBlockIds?.length) promises.push(this.processContainedInItems(containedInBlockIds))
-    else promises.push(Promise.resolve([]))
-    
-    if (referencingAliasBlocks?.length) promises.push(this.processReferencingAliasItems(referencingAliasBlocks))
-    else promises.push(Promise.resolve([]))
-    
-    if (childReferencedAliasBlocks?.length) promises.push(this.processChildReferencedAliasItems(childReferencedAliasBlocks))
-    else promises.push(Promise.resolve([]))
-    
-    if (backrefAliasBlocks?.length) promises.push(this.processBackrefAliasItems(backrefAliasBlocks))
-    else promises.push(Promise.resolve([]))
+    const promises = [] as Promise<PageDisplayItem[]>[]
 
-    // 并行处理所有类型的项目
+    promises.push(childrenTags?.length ? this.processTagItems(childrenTags) : Promise.resolve([]))
+    promises.push(referencedBlocks?.length ? this.processReferencedItems(referencedBlocks, tagBlockIds) : Promise.resolve([]))
+    promises.push(containedInBlockIds?.length ? this.processContainedInItems(containedInBlockIds) : Promise.resolve([]))
+    promises.push(referencingAliasBlocks?.length ? this.processReferencingAliasItems(referencingAliasBlocks) : Promise.resolve([]))
+    promises.push(childReferencedAliasBlocks?.length ? this.processChildReferencedAliasItems(childReferencedAliasBlocks) : Promise.resolve([]))
+    promises.push(backrefAliasBlocks?.length ? this.processBackrefAliasItems(backrefAliasBlocks) : Promise.resolve([]))
+
     const [tagItems, referencedItems, containedInItems, referencingAliasItems, childReferencedAliasItems, backrefAliasItems] = await Promise.all(promises)
 
-    // 合并所有项目
-    const allItems = [...tagItems, ...referencedItems, ...containedInItems, ...referencingAliasItems, ...childReferencedAliasItems, ...backrefAliasItems]
-    
-    // 去重：根据ID和文本内容去重，保持唯一性
-    const uniqueItems = this.deduplicateItems(allItems)
-    
-    // 简化排序逻辑
-    uniqueItems.sort((a, b) => {
-      const aIsPriority = (a.itemType === 'referenced' && tagBlockIds.includes(a.id)) || 
-                         (a.itemType === 'referenced' && containedInBlockIds.includes(a.id))
-      const bIsPriority = (b.itemType === 'referenced' && tagBlockIds.includes(b.id)) || 
-                         (b.itemType === 'referenced' && containedInBlockIds.includes(b.id))
-      
-      if (aIsPriority && !bIsPriority) return -1
-      if (!aIsPriority && bIsPriority) return 1
-      return 0
-    })
-    
+    const groupSource: Record<PageDisplayItemType, PageDisplayItem[]> = {
+      tag: tagItems,
+      referenced: referencedItems,
+      'referencing-alias': referencingAliasItems,
+      'child-referenced-alias': childReferencedAliasItems,
+      'backref-alias-blocks': backrefAliasItems
+    }
+
+    const groupedItems = this.buildGroupedItems(groupSource, tagBlockIds, containedInBlockIds)
+    const uniqueItems: PageDisplayItem[] = []
+
+    for (const definition of this.getDisplayGroupDefinitions()) {
+      uniqueItems.push(...groupedItems[definition.type])
+    }
+
     return {
       items: uniqueItems,
+      groupedItems,
       tagBlockIds,
       inlineRefIds,
       containedInBlockIds
@@ -2472,12 +2618,12 @@ export class PageDisplay {
    * 从处理后的项目创建显示
    */
   private createDisplayFromItems(items: ProcessedItemsResult, data: GatheredData) {
-    const { items: uniqueItems, tagBlockIds, inlineRefIds, containedInBlockIds } = items
+    const { items: uniqueItems, groupedItems, tagBlockIds, inlineRefIds, containedInBlockIds } = items
     
     this.log("PageDisplay: Creating display with", uniqueItems.length, "unique items")
     
     try {
-      this.createDisplay(uniqueItems, tagBlockIds, inlineRefIds, containedInBlockIds)
+      this.createDisplay(uniqueItems, groupedItems, tagBlockIds, inlineRefIds, containedInBlockIds)
       this.retryCount = 0 // 重置重试计数
       
       // 更新查询列表按钮状态
@@ -2493,12 +2639,12 @@ export class PageDisplay {
    * 只更新指定面板的显示，不影响其他面板
    */
   private createCurrentPanelDisplay(items: ProcessedItemsResult, data: GatheredData, panelId: string) {
-    const { items: uniqueItems, tagBlockIds, inlineRefIds, containedInBlockIds } = items
+    const { items: uniqueItems, groupedItems, tagBlockIds, inlineRefIds, containedInBlockIds } = items
     
     this.log("PageDisplay: Creating current panel display with", uniqueItems.length, "unique items for panel", panelId)
     
     try {
-      this.createDisplayForPanel(uniqueItems, tagBlockIds, inlineRefIds, containedInBlockIds, panelId)
+      this.createDisplayForPanel(uniqueItems, groupedItems, tagBlockIds, inlineRefIds, containedInBlockIds, panelId)
       this.retryCount = 0 // 重置重试计数
       
       // 更新当前面板的查询列表按钮状态
@@ -2790,7 +2936,7 @@ export class PageDisplay {
    * @param inlineRefIds 内联引用块ID列表，用于图标分配
    * @param containedInBlockIds 包含于块ID列表，用于图标分配
    */
-  private createDisplay(items: PageDisplayItem[], tagBlockIds: DbId[] = [], inlineRefIds: DbId[] = [], containedInBlockIds: DbId[] = []) {
+  private createDisplay(items: PageDisplayItem[], groupedItems: DisplayGroupsMap, tagBlockIds: DbId[] = [], inlineRefIds: DbId[] = [], containedInBlockIds: DbId[] = []) {
     this.log("PageDisplay: createDisplay called with", items.length, "items")
     this.log("PageDisplay: Items details:", items)
     this.log("PageDisplay: Tag block IDs:", tagBlockIds)
@@ -2811,7 +2957,7 @@ export class PageDisplay {
       setTimeout(() => {
         targetElement = this.findTargetElement()
         if (targetElement) {
-          this.createDisplay(items)
+          this.createDisplay(items, groupedItems)
         } else {
           this.logError("PageDisplay: Still no target element found after retry")
           throw new Error("No target element found")
@@ -3356,7 +3502,7 @@ export class PageDisplay {
    * @param containedInBlockIds 包含于块ID列表
    * @param panelId 目标面板ID
    */
-  private createDisplayForPanel(items: PageDisplayItem[], tagBlockIds: DbId[] = [], inlineRefIds: DbId[] = [], containedInBlockIds: DbId[] = [], panelId: string) {
+  private createDisplayForPanel(items: PageDisplayItem[], groupedItems: DisplayGroupsMap, tagBlockIds: DbId[] = [], inlineRefIds: DbId[] = [], containedInBlockIds: DbId[] = [], panelId: string) {
     this.log("PageDisplay: createDisplayForPanel called with", items.length, "items for panel", panelId)
     this.log("PageDisplay: Items details:", items)
     this.log("PageDisplay: Tag block IDs:", tagBlockIds)
@@ -3373,7 +3519,7 @@ export class PageDisplay {
       setTimeout(() => {
         targetElement = this.findTargetElement()
         if (targetElement) {
-          this.createDisplayForPanel(items, tagBlockIds, inlineRefIds, containedInBlockIds, panelId)
+          this.createDisplayForPanel(items, groupedItems, tagBlockIds, inlineRefIds, containedInBlockIds, panelId)
         } else {
           this.logError("PageDisplay: Still no target element found after retry")
           throw new Error("No target element found")
@@ -3962,43 +4108,46 @@ export class PageDisplay {
    * 监听页面变化，当标签层级结构出现时自动更新显示
    */
   private setupDOMObserver() {
-    // 观察DOM变化，当标签层级结构出现时重新更新显示
-    const observer = new MutationObserver((mutations) => {
+    if (this.tagHierarchyObserver) {
+      this.tagHierarchyObserver.disconnect()
+    }
+
+    this.tagHierarchyObserver = new MutationObserver((mutations) => {
       let shouldUpdate = false
-      
+
       mutations.forEach((mutation) => {
-        // 检查是否有新的标签层级结构元素添加
         if (mutation.type === 'childList') {
           mutation.addedNodes.forEach((node) => {
             if (node.nodeType === Node.ELEMENT_NODE) {
               const element = node as Element
-              // 检查是否包含标签层级结构元素
-              if (element.querySelector?.('.orca-repr-tag-hierarchy') || 
+              if (element.querySelector?.('.orca-repr-tag-hierarchy') ||
                   element.classList?.contains('orca-repr-tag-hierarchy')) {
-                this.log("检测到新的标签层级结构元素，准备更新显示")
+                this.log('检测到新的标签层级结构元素，准备更新显示')
                 shouldUpdate = true
               }
             }
           })
         }
       })
-      
+
       if (shouldUpdate) {
-        // 延迟更新，确保DOM完全渲染
         setTimeout(() => {
-          this.log("DOM变化触发显示更新")
+          this.log('DOM变化触发显示更新')
           this.updateDisplay()
         }, 100)
       }
     })
-    
-    // 开始观察整个文档的变化
-    observer.observe(document.body, {
+
+    if (!document.body) {
+      return
+    }
+
+    this.tagHierarchyObserver.observe(document.body, {
       childList: true,
       subtree: true,
       attributes: false
     })
-    
-    this.log("DOM观察器已启动")
+
+    this.log('DOM观察器已启动')
   }
 }

@@ -18,7 +18,7 @@ export async function load(_name: string) {
   
   // 初始化PageDisplay
   console.log("PageDisplay Plugin: 初始化PageDisplay");
-  pageDisplay.init();
+  await pageDisplay.init();
   
   console.log("PageDisplay Plugin: 插件加载完成");
 
@@ -86,9 +86,9 @@ export async function load(_name: string) {
 
 
   // 添加手动刷新命令（强制刷新并重新添加元素）
-  orca.commands.registerCommand(`${pluginName}.refreshDisplay`, () => {
+  orca.commands.registerCommand(`${pluginName}.refreshDisplay`, async () => {
     if (pageDisplay) {
-      pageDisplay.forceRefreshAndReinit();
+      await pageDisplay.forceRefreshAndReinit();
       orca.notify("info", "页面空间显示已强制刷新并重新添加元素");
     }
   }, "刷新页面空间显示");
