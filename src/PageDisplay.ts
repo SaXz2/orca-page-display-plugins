@@ -301,7 +301,9 @@ class StyleManager {
       border: isDarkMode ? '#3a3a3a' : '#e0e0e0',
       background: isDarkMode ? '#1e1e1e' : '#ffffff',
       backgroundHover: isDarkMode ? '#2d2d2d' : '#f5f5f5',
-      backgroundSubtle: isDarkMode ? '#252525' : '#fafafa'
+      backgroundSubtle: isDarkMode ? '#252525' : '#fafafa',
+      highlightBg: isDarkMode ? '#ffd700' : '#ffeb3b',
+      highlightText: isDarkMode ? '#000000' : '#000000'
     }
   }
 
@@ -329,6 +331,7 @@ class StyleManager {
       'page-display-item',
       'page-display-item-icon',
       'page-display-item-text',
+      'page-display-highlight',
       'page-display-query-list-toggle'
     ]
     
@@ -599,6 +602,16 @@ class StyleManager {
           font-weight: normal;
           line-height: 1.5;
           flex: 1;
+        `
+        break
+        
+      case 'page-display-highlight':
+        element.style.cssText = `
+          background-color: ${colors.highlightBg};
+          color: ${colors.highlightText};
+          padding: 1px 2px;
+          border-radius: 2px;
+          font-weight: 500;
         `
         break
         
@@ -1592,8 +1605,45 @@ export class PageDisplay {
   }
 
   /**
+   * HTML转义函数，防止XSS攻击
+   * @param text 需要转义的文本
+   * @returns 转义后的安全文本
+   */
+  private escapeHtml(text: string): string {
+    const div = document.createElement('div')
+    div.textContent = text
+    return div.innerHTML
+  }
+
+  /**
+   * 高亮搜索关键词
+   * @param text 原始文本
+   * @param keywords 搜索关键词数组
+   * @returns 包含高亮标签的HTML字符串
+   */
+  private highlightSearchTerms(text: string, keywords: string[]): string {
+    if (!keywords || keywords.length === 0) {
+      return this.escapeHtml(text)
+    }
+
+    let highlightedText = this.escapeHtml(text)
+    
+    // 对每个关键词进行高亮处理
+    keywords.forEach(keyword => {
+      if (keyword.trim()) {
+        const escapedKeyword = this.escapeHtml(keyword.trim())
+        // 使用正则表达式进行不区分大小写的全局替换
+        const regex = new RegExp(`(${escapedKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+        highlightedText = highlightedText.replace(regex, '<mark class="page-display-highlight">$1</mark>')
+      }
+    })
+    
+    return highlightedText
+  }
+
+  /**
    * 去重项目，保持唯一性
-   * 根据ID和文本内容去重，避免重复显示相同项目
+   * 根据ID和文本内容去重，避免显示相同项目
    * @param items 原始项目列表
    * @returns 去重后的项目列表
    */
@@ -4257,7 +4307,16 @@ export class PageDisplay {
         
         // 创建文本内容
         const text = document.createElement('span')
-        text.textContent = item.text
+        
+        // 检查是否有搜索关键词需要高亮
+        const searchTerm = searchInput.value.trim()
+        if (searchTerm) {
+          const keywords = searchTerm.toLowerCase().split(/\s+/).filter(k => k.length > 0)
+          text.innerHTML = this.highlightSearchTerms(item.text, keywords)
+        } else {
+          text.textContent = item.text
+        }
+        
         this.applyStyles(text, 'page-display-item-text')
         itemElement.appendChild(text)
         
