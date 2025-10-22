@@ -1162,11 +1162,24 @@ export class PageDisplay {
       const aIsTag = tagBlockIds.includes(a.id)
       const bIsTag = tagBlockIds.includes(b.id)
 
-      // 优先级排序：包含于块 > 标签块 > 其他
-      if (aIsContainedIn && !bIsContainedIn) return -1  // 包含于块优先
-      if (!aIsContainedIn && bIsContainedIn) return 1
+      // 第一级判断：包含于块(非子标签) - 最高优先级
+      const aIsContainedInNotTag = aIsContainedIn && !aIsTag
+      const bIsContainedInNotTag = bIsContainedIn && !bIsTag
       
-      if (aIsTag && !bIsTag) return -1  // 标签块次优先
+      if (aIsContainedInNotTag && !bIsContainedInNotTag) return -1  // 包含于块(非子标签)最高优先级
+      if (!aIsContainedInNotTag && bIsContainedInNotTag) return 1
+      if (aIsContainedInNotTag && bIsContainedInNotTag) return 0  // 都是包含于块(非子标签)，保持原顺序
+      
+      // 第二级判断：包含于块(是子标签)
+      const aIsContainedInTag = aIsContainedIn && aIsTag
+      const bIsContainedInTag = bIsContainedIn && bIsTag
+      
+      if (aIsContainedInTag && !bIsContainedInTag) return -1  // 包含于块(是子标签)次优先
+      if (!aIsContainedInTag && bIsContainedInTag) return 1
+      if (aIsContainedInTag && bIsContainedInTag) return 0  // 都是包含于块(是子标签)，保持原顺序
+      
+      // 第三级判断：标签块
+      if (aIsTag && !bIsTag) return -1  // 标签块第三优先
       if (!aIsTag && bIsTag) return 1
       
       return 0  // 其他保持原顺序
@@ -3281,7 +3294,25 @@ export class PageDisplay {
     // 更新显示的函数
     const updateDisplay = () => {
       const searchTerm = searchInput.value
-      const filteredItems = filterItems(searchTerm)
+      let filteredItems = filterItems(searchTerm)
+      
+      // 对过滤后的项目进行置顶排序：包含于块(非子标签)置顶显示
+      filteredItems = filteredItems.sort((a, b) => {
+        const aIsContainedIn = containedInBlockIds.includes(a.id)
+        const bIsContainedIn = containedInBlockIds.includes(b.id)
+        const aIsTag = tagBlockIds.includes(a.id)
+        const bIsTag = tagBlockIds.includes(b.id)
+        
+        // 判断是否为包含于块但不是子标签
+        const aIsContainedInNotTag = aIsContainedIn && !aIsTag
+        const bIsContainedInNotTag = bIsContainedIn && !bIsTag
+        
+        // 包含于块(非子标签)置顶显示
+        if (aIsContainedInNotTag && !bIsContainedInNotTag) return -1
+        if (!aIsContainedInNotTag && bIsContainedInNotTag) return 1
+        
+        return 0  // 其他保持原顺序
+      })
       
       // 更新页面统计
       const totalCount = originalItems.length
