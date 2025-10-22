@@ -320,6 +320,9 @@ class StyleManager {
       'page-display-count',
       'page-display-search-icon',
       'page-display-filter-icon',
+      'page-display-icons-toggle-icon',
+      'page-display-multiline-toggle-icon',
+      'page-display-multicolumn-toggle-icon',
       'page-display-search-container',
       'page-display-search-input',
       'page-display-list',
@@ -440,6 +443,41 @@ class StyleManager {
         break
         
       case 'page-display-filter-icon':
+        element.style.cssText = `
+          width: 28px;
+          height: 28px;
+          background: ${colors.background};
+          border: 1px solid ${colors.border};
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          margin-left: 8px;
+          opacity: 0;
+          transition: all 0.2s ease;
+          flex-shrink: 0;
+          font-size: 14px;
+          color: ${colors.textMuted};
+        `
+        
+        // 添加悬停效果
+        element.addEventListener('mouseenter', () => {
+          element.style.opacity = '1'
+          element.style.background = colors.backgroundHover
+          element.style.color = colors.text
+        })
+        
+        element.addEventListener('mouseleave', () => {
+          element.style.opacity = '0'
+          element.style.background = colors.background
+          element.style.color = colors.textMuted
+        })
+        break
+        
+      case 'page-display-icons-toggle-icon':
+      case 'page-display-multiline-toggle-icon':
+      case 'page-display-multicolumn-toggle-icon':
         element.style.cssText = `
           width: 28px;
           height: 28px;
@@ -833,7 +871,7 @@ export class PageDisplay {
   /** 控制查询列表是否隐藏 */
   private queryListHidden: boolean = false
   /** 控制反链别名块查询是否开启，默认关闭 */
-  private backrefAliasQueryEnabled: boolean = false
+  private backrefAliasQueryEnabled: boolean = true
   /** 防抖定时器，避免频繁更新 */
   private updateTimeout: number | null = null
   /** 定期检查定时器，用于检测页面变化 */
@@ -950,12 +988,8 @@ export class PageDisplay {
     // 保存设置到本地存储
     this.saveSettings()
     
-    // 如果当前面板有显示，重新创建以应用新的图标设置
-    const panelId = this.getCurrentPanelId()
-    const container = this.containers.get(panelId)
-    if (container) {
-      this.updateDisplay()
-    }
+    // 强制更新显示以应用新的图标设置
+    this.forceUpdate()
   }
 
   /**
@@ -976,12 +1010,8 @@ export class PageDisplay {
     // 保存设置到本地存储
     this.saveSettings()
     
-    // 如果当前面板有显示，重新创建以应用新的多行设置
-    const panelId = this.getCurrentPanelId()
-    const container = this.containers.get(panelId)
-    if (container) {
-      this.updateDisplay()
-    }
+    // 强制更新显示以应用新的多行设置
+    this.forceUpdate()
   }
 
   /**
@@ -1002,12 +1032,8 @@ export class PageDisplay {
     // 保存设置到本地存储
     this.saveSettings()
     
-    // 如果当前面板有显示，重新创建以应用新的多列设置
-    const panelId = this.getCurrentPanelId()
-    const container = this.containers.get(panelId)
-    if (container) {
-      this.updateDisplay()
-    }
+    // 强制更新显示以应用新的多列设置
+    this.forceUpdate()
   }
   
 
@@ -1072,22 +1098,6 @@ export class PageDisplay {
     return this.debugMode
   }
 
-  // 切换反链别名块查询状态
-  public toggleBackrefAliasQuery(): void {
-    this.backrefAliasQueryEnabled = !this.backrefAliasQueryEnabled
-    this.saveSettings()
-    
-    // 清除缓存，因为查询逻辑发生了变化
-    this.clearCache()
-    
-    // 强制更新显示
-    this.forceUpdate()
-  }
-
-  // 获取反链别名块查询状态
-  public getBackrefAliasQueryEnabled(): boolean {
-    return this.backrefAliasQueryEnabled
-  }
 
   // === 类型过滤相关方法 ===
   
@@ -1532,7 +1542,7 @@ export class PageDisplay {
         this.multiLine = parsedSettings.multiLine ?? false
         this.multiColumn = parsedSettings.multiColumn ?? false
         this.queryListHidden = parsedSettings.queryListHidden ?? false
-        this.backrefAliasQueryEnabled = parsedSettings.backrefAliasQueryEnabled ?? false
+        this.backrefAliasQueryEnabled = parsedSettings.backrefAliasQueryEnabled ?? true
         const savedMode = parsedSettings.displayMode
         if (savedMode === 'flat' || savedMode === 'grouped') {
           this.displayMode = savedMode
@@ -3757,12 +3767,12 @@ export class PageDisplay {
     
     // 创建折叠箭头
     const arrow = document.createElement('span')
-    arrow.textContent = '▶'
+    arrow.innerHTML = '<i class="ti ti-chevron-right"></i>'
     this.applyStyles(arrow, 'page-display-arrow')
     
     // 设置初始状态：根据当前页面状态设置箭头方向
     if (!this.getCurrentPageCollapseState()) {
-      arrow.style.transform = 'rotate(90deg)'
+      arrow.innerHTML = '<i class="ti ti-chevron-down"></i>'
     }
     
     // 创建标题文本
@@ -3777,15 +3787,36 @@ export class PageDisplay {
     
     // 创建搜索图标
     const searchIcon = document.createElement('div')
-    searchIcon.textContent = '🔍'
+    searchIcon.innerHTML = '<i class="ti ti-search"></i>'
     searchIcon.className = 'page-display-search-icon'
     this.applyStyles(searchIcon, 'page-display-search-icon')
     
     // 创建类型过滤图标
     const filterIcon = document.createElement('div')
-    filterIcon.textContent = '⚙️'
+    filterIcon.innerHTML = '<i class="ti ti-settings"></i>'
     filterIcon.className = 'page-display-filter-icon'
     this.applyStyles(filterIcon, 'page-display-filter-icon')
+    
+    // 创建图标显示切换按钮
+    const iconsToggleIcon = document.createElement('div')
+    iconsToggleIcon.innerHTML = this.showIcons ? '<i class="ti ti-eye"></i>' : '<i class="ti ti-eye-off"></i>'
+    iconsToggleIcon.className = 'page-display-icons-toggle-icon'
+    this.applyStyles(iconsToggleIcon, 'page-display-icons-toggle-icon')
+    iconsToggleIcon.title = this.showIcons ? '隐藏图标' : '显示图标'
+    
+    // 创建多行显示切换按钮
+    const multiLineToggleIcon = document.createElement('div')
+    multiLineToggleIcon.innerHTML = this.multiLine ? '<i class="ti ti-layout-line"></i>' : '<i class="ti ti-layout-rows"></i>'
+    multiLineToggleIcon.className = 'page-display-multiline-toggle-icon'
+    this.applyStyles(multiLineToggleIcon, 'page-display-multiline-toggle-icon')
+    multiLineToggleIcon.title = this.multiLine ? '单行显示' : '多行显示'
+    
+    // 创建多列显示切换按钮
+    const multiColumnToggleIcon = document.createElement('div')
+    multiColumnToggleIcon.innerHTML = this.multiColumn ? '<i class="ti ti-layout-columns"></i>' : '<i class="ti ti-layout-grid"></i>'
+    multiColumnToggleIcon.className = 'page-display-multicolumn-toggle-icon'
+    this.applyStyles(multiColumnToggleIcon, 'page-display-multicolumn-toggle-icon')
+    multiColumnToggleIcon.title = this.multiColumn ? '单列显示' : '多列显示'
     
     leftContent.appendChild(arrow)
     leftContent.appendChild(title)
@@ -3793,6 +3824,9 @@ export class PageDisplay {
     titleContainer.appendChild(leftContent)
     titleContainer.appendChild(searchIcon)
     titleContainer.appendChild(filterIcon)
+    titleContainer.appendChild(iconsToggleIcon)
+    titleContainer.appendChild(multiLineToggleIcon)
+    titleContainer.appendChild(multiColumnToggleIcon)
     
     container.appendChild(titleContainer)
     
@@ -3859,6 +3893,60 @@ export class PageDisplay {
       }
     })
     
+    // 图标显示切换按钮悬浮效果
+    iconsToggleIcon.addEventListener('mouseenter', () => {
+      iconsToggleIcon.style.opacity = '1'
+      iconsToggleIcon.style.background = 'var(--page-display-search-bg-hover)'
+    })
+    
+    iconsToggleIcon.addEventListener('mouseleave', () => {
+      iconsToggleIcon.style.opacity = '0'
+      iconsToggleIcon.style.background = 'var(--page-display-search-bg)'
+    })
+    
+    // 图标显示切换按钮事件
+    iconsToggleIcon.addEventListener('click', () => {
+      this.toggleIcons()
+      iconsToggleIcon.title = this.showIcons ? '隐藏图标' : '显示图标'
+      iconsToggleIcon.innerHTML = this.showIcons ? '<i class="ti ti-eye"></i>' : '<i class="ti ti-eye-off"></i>'
+    })
+    
+    // 多行显示切换按钮悬浮效果
+    multiLineToggleIcon.addEventListener('mouseenter', () => {
+      multiLineToggleIcon.style.opacity = '1'
+      multiLineToggleIcon.style.background = 'var(--page-display-search-bg-hover)'
+    })
+    
+    multiLineToggleIcon.addEventListener('mouseleave', () => {
+      multiLineToggleIcon.style.opacity = '0'
+      multiLineToggleIcon.style.background = 'var(--page-display-search-bg)'
+    })
+    
+    // 多行显示切换按钮事件
+    multiLineToggleIcon.addEventListener('click', () => {
+      this.toggleMultiLine()
+      multiLineToggleIcon.title = this.multiLine ? '单行显示' : '多行显示'
+      multiLineToggleIcon.innerHTML = this.multiLine ? '<i class="ti ti-layout-line"></i>' : '<i class="ti ti-layout-rows"></i>'
+    })
+    
+    // 多列显示切换按钮悬浮效果
+    multiColumnToggleIcon.addEventListener('mouseenter', () => {
+      multiColumnToggleIcon.style.opacity = '1'
+      multiColumnToggleIcon.style.background = 'var(--page-display-search-bg-hover)'
+    })
+    
+    multiColumnToggleIcon.addEventListener('mouseleave', () => {
+      multiColumnToggleIcon.style.opacity = '0'
+      multiColumnToggleIcon.style.background = 'var(--page-display-search-bg)'
+    })
+    
+    // 多列显示切换按钮事件
+    multiColumnToggleIcon.addEventListener('click', () => {
+      this.toggleMultiColumn()
+      multiColumnToggleIcon.title = this.multiColumn ? '单列显示' : '多列显示'
+      multiColumnToggleIcon.innerHTML = this.multiColumn ? '<i class="ti ti-layout-columns"></i>' : '<i class="ti ti-layout-grid"></i>'
+    })
+    
     // 标题容器悬浮效果（只在右侧区域悬浮时显示搜索图标）
     titleContainer.addEventListener('mouseenter', (e) => {
       // 检查鼠标是否在右侧区域（搜索图标区域）
@@ -3891,7 +3979,7 @@ export class PageDisplay {
         // 折叠：平滑隐藏列表
         list.style.opacity = '0'
         list.style.maxHeight = '0'
-        arrow.style.transform = 'rotate(0deg)' // 折叠时箭头向右
+        arrow.innerHTML = '<i class="ti ti-chevron-right"></i>' // 折叠时箭头向右
         
         // 如果搜索框是显示的，也隐藏它
         if (isSearchVisible) {
@@ -3923,7 +4011,7 @@ export class PageDisplay {
         
         list.style.opacity = '1'
         list.style.maxHeight = '1000px'
-        arrow.style.transform = 'rotate(90deg)' // 展开时箭头向下
+        arrow.innerHTML = '<i class="ti ti-chevron-down"></i>' // 展开时箭头向下
         
         // 搜索框只有在用户主动点击搜索图标时才显示
         // 这里不自动显示搜索框
@@ -4273,7 +4361,7 @@ export class PageDisplay {
       list.style.display = 'none'
       list.style.opacity = '0'
       list.style.maxHeight = '0'
-      arrow.style.transform = 'rotate(0deg)'
+      arrow.innerHTML = '<i class="ti ti-chevron-right"></i>'
       if (searchContainer.style.display !== 'none') {
         searchContainer.style.display = 'none'
         searchContainer.style.opacity = '0'

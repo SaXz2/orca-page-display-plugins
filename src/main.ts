@@ -59,30 +59,6 @@ export async function load(_name: string) {
   // 存储取消订阅函数以便清理
   (window as any).__orcaPageDisplayUnsubscribe = unsubscribe;
 
-  // 注册全局命令
-  orca.commands.registerCommand(`${pluginName}.toggleIcons`, () => {
-    if (pageDisplay) {
-      pageDisplay.toggleIcons();
-      const status = pageDisplay.getIconsEnabled() ? "显示" : "隐藏";
-      orca.notify("info", `页面空间图标已${status}`);
-    }
-  }, "切换页面空间图标显示");
-
-  orca.commands.registerCommand(`${pluginName}.toggleMultiLine`, () => {
-    if (pageDisplay) {
-      pageDisplay.toggleMultiLine();
-      const status = pageDisplay.getMultiLineEnabled() ? "启用" : "禁用";
-      orca.notify("info", `页面空间多行显示已${status}`);
-    }
-  }, "切换页面空间多行显示");
-
-  orca.commands.registerCommand(`${pluginName}.toggleMultiColumn`, () => {
-    if (pageDisplay) {
-      pageDisplay.toggleMultiColumn();
-      const status = pageDisplay.getMultiColumnEnabled() ? "启用" : "禁用";
-      orca.notify("info", `页面空间多列显示已${status}`);
-    }
-  }, "切换页面空间多列显示");
 
 
   // 添加手动刷新命令（强制刷新并重新添加元素）
@@ -95,14 +71,6 @@ export async function load(_name: string) {
 
   console.log(`${pluginName} loaded.`);
 
-  // 添加反链别名块查询切换命令
-  orca.commands.registerCommand(`${pluginName}.toggleBackrefAliasQuery`, () => {
-    if (pageDisplay) {
-      pageDisplay.toggleBackrefAliasQuery();
-      const status = pageDisplay.getBackrefAliasQueryEnabled() ? "启用" : "禁用";
-      orca.notify("info", `反链别名块查询已${status}`);
-    }
-  }, "切换反链别名块查询");
 
   // 添加类型过滤面板切换命令
   orca.commands.registerCommand(`${pluginName}.toggleTypeFilters`, () => {
