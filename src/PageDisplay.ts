@@ -2436,9 +2436,11 @@ export class PageDisplay {
 
     const [tagItems, referencedItems, containedInItems, referencingAliasItems, childReferencedAliasItems, backrefAliasItems] = await Promise.all(promises)
 
+    this.log(`PageDisplay: 数据处理完成 - tagItems: ${tagItems.length}, referencedItems: ${referencedItems.length}, containedInItems: ${containedInItems.length}, referencingAliasItems: ${referencingAliasItems.length}, childReferencedAliasItems: ${childReferencedAliasItems.length}, backrefAliasItems: ${backrefAliasItems.length}`)
+
     const groupSource: Record<PageDisplayItemType, PageDisplayItem[]> = {
       tag: tagItems,
-      referenced: referencedItems,
+      referenced: [...referencedItems, ...containedInItems], // 将包含于块合并到被引用块中
       'referencing-alias': referencingAliasItems,
       'child-referenced-alias': childReferencedAliasItems,
       'backref-alias-blocks': backrefAliasItems
@@ -2522,6 +2524,8 @@ export class PageDisplay {
   private async processContainedInItems(containedInBlockIds: DbId[]): Promise<PageDisplayItem[]> {
     const containedInItems: PageDisplayItem[] = []
     
+    this.log(`PageDisplay: 开始处理包含于项目，共 ${containedInBlockIds.length} 个块ID`)
+    
     for (const blockId of containedInBlockIds) {
       try {
         this.log(`PageDisplay: processing contained in block ID: ${blockId}`)
@@ -2533,14 +2537,21 @@ export class PageDisplay {
           continue
         }
         
+        this.log(`PageDisplay: 获取到块数据:`, block)
+        
         // 检查是否有名称或别名
         const hasName = (block.aliases && block.aliases.length > 0) || block.text
         if (hasName) {
           const displayText = (block.aliases && block.aliases[0]) || block.text || `包含于块 ${block.id}`
           const enhancedItem = await this.createPageDisplayItem(block, 'referenced', displayText)
+          
+          // 确保包含于块有正确的标识
+          enhancedItem._hide = false // 确保显示
+          enhancedItem.itemType = 'referenced' // 确保类型正确
+          
           containedInItems.push(enhancedItem)
           
-          this.log(`PageDisplay: added contained in item: ${displayText}`)
+          this.log(`PageDisplay: added contained in item: ${displayText}, itemType: ${enhancedItem.itemType}`)
         } else {
           this.log(`PageDisplay: skipping contained in block (no name/aliases): ${blockId}`)
         }
@@ -2549,6 +2560,7 @@ export class PageDisplay {
       }
     }
     
+    this.log(`PageDisplay: 处理完成，共生成 ${containedInItems.length} 个包含于项目`)
     return containedInItems
   }
 
@@ -2676,33 +2688,8 @@ export class PageDisplay {
       try {
         this.log(`开始解析标签层级结构... (尝试 ${attempt}/${maxRetries})`)
         
-        // 查找标签层级结构元素 - 尝试多种选择器
-        let hierarchyElement = document.querySelector('.orca-repr-tag-hierarchy')
-        
-        // 如果没找到，尝试在活动面板中查找
-        if (!hierarchyElement) {
-          const activePanel = document.querySelector('.orca-panel.active')
-          if (activePanel) {
-            hierarchyElement = activePanel.querySelector('.orca-repr-tag-hierarchy')
-            this.log("在活动面板中查找标签层级结构元素")
-          }
-        }
-        
-        // 如果还是没找到，尝试查找所有可能的层级结构元素
-        if (!hierarchyElement) {
-          const allHierarchyElements = document.querySelectorAll('.orca-repr-tag-hierarchy')
-          this.log(`找到 ${allHierarchyElements.length} 个标签层级结构元素`)
-          
-          // 选择第一个可见的元素
-          for (const element of allHierarchyElements) {
-            const rect = element.getBoundingClientRect()
-            if (rect.width > 0 && rect.height > 0) {
-              hierarchyElement = element
-              this.log("选择第一个可见的标签层级结构元素")
-              break
-            }
-          }
-        }
+        // 查找标签层级结构元素 - 尝试多种选择器策略
+        let hierarchyElement = this.findTagHierarchyElement()
         
         if (!hierarchyElement) {
           this.log(`尝试 ${attempt}: 未找到标签层级结构元素`)
@@ -2713,18 +2700,8 @@ export class PageDisplay {
           return []
         }
 
-        // 查找第一个 span.orca-repr-tag-hierarchy-text
-        const firstSpan = hierarchyElement.querySelector('span.orca-repr-tag-hierarchy-text')
-        if (!firstSpan) {
-          this.log(`尝试 ${attempt}: 未找到第一个标签层级文本元素`)
-          if (attempt < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, retryDelay))
-            continue
-          }
-          return []
-        }
-
-        const tagText = firstSpan.textContent?.trim()
+        // 查找标签层级文本元素 - 使用多种选择器
+        const tagText = this.extractTagHierarchyText(hierarchyElement)
         if (!tagText) {
           this.log(`尝试 ${attempt}: 标签层级文本为空`)
           if (attempt < maxRetries) {
@@ -2736,15 +2713,12 @@ export class PageDisplay {
 
         this.log(`找到标签层级文本: "${tagText}"`)
 
-        // 通过别名查找对应的块ID
+        // 通过别名查找对应的块ID - 改进错误处理
         try {
-          const blockId = await this.cachedApiCall("get-blockid-by-alias", tagText)
-          if (blockId && typeof blockId === 'object' && blockId.id) {
-            this.log(`找到包含于块ID: ${blockId.id} (别名: ${tagText})`)
-            return [blockId.id]
-          } else if (typeof blockId === 'number') {
-            this.log(`找到包含于块ID: ${blockId} (别名: ${tagText})`)
-            return [blockId]
+          const blockIdResult = await this.findBlockIdByAlias(tagText)
+          if (blockIdResult) {
+            this.log(`找到包含于块ID: ${blockIdResult} (别名: ${tagText})`)
+            return [blockIdResult]
           } else {
             this.log(`未找到别名 "${tagText}" 对应的块ID`)
             return []
@@ -2769,6 +2743,112 @@ export class PageDisplay {
     
     return []
   }
+
+  /**
+   * 查找标签层级结构元素 - 使用多种选择器策略
+   */
+  private findTagHierarchyElement(): HTMLElement | null {
+    // 策略1: 直接查找标准选择器
+    let element = document.querySelector('.orca-repr-tag-hierarchy') as HTMLElement
+    if (element) {
+      return element
+    }
+
+    // 策略2: 在活动面板中查找
+    const activePanel = document.querySelector('.orca-panel.active')
+    if (activePanel) {
+      element = activePanel.querySelector('.orca-repr-tag-hierarchy') as HTMLElement
+      if (element) {
+        return element
+      }
+    }
+
+    // 策略3: 查找所有可能的层级结构元素
+    const allElements = document.querySelectorAll('.orca-repr-tag-hierarchy')
+    
+    for (const el of allElements) {
+      const rect = el.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        return el as HTMLElement
+      }
+    }
+
+    // 策略4: 尝试更通用的选择器
+    const genericSelectors = [
+      '[class*="tag-hierarchy"]',
+      '[class*="hierarchy"]',
+      '[class*="tag"]',
+      '.tag-hierarchy',
+      '.hierarchy'
+    ]
+
+    for (const selector of genericSelectors) {
+      element = document.querySelector(selector) as HTMLElement
+      if (element && element.textContent && element.textContent.trim()) {
+        return element
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * 提取标签层级文本
+   */
+  private extractTagHierarchyText(element: HTMLElement): string | null {
+    // 策略1: 查找标准文本元素
+    let textElement = element.querySelector('span.orca-repr-tag-hierarchy-text')
+    if (textElement) {
+      const text = textElement.textContent?.trim()
+      if (text) {
+        return text
+      }
+    }
+
+    // 策略2: 查找任何包含文本的span元素
+    const spans = element.querySelectorAll('span')
+    for (const span of spans) {
+      const text = span.textContent?.trim()
+      if (text && text.length > 0 && text.length < 100) { // 合理的文本长度
+        return text
+      }
+    }
+
+    // 策略3: 直接使用元素的文本内容
+    const directText = element.textContent?.trim()
+    if (directText && directText.length > 0 && directText.length < 100) {
+      return directText
+    }
+
+    return null
+  }
+
+  /**
+   * 通过别名查找块ID - 改进错误处理
+   */
+  private async findBlockIdByAlias(alias: string): Promise<DbId | null> {
+    try {
+      const result = await this.cachedApiCall("get-blockid-by-alias", alias)
+      
+      // 处理不同的返回格式
+      if (result && typeof result === 'object' && result.id) {
+        return result.id
+      } else if (typeof result === 'number') {
+        return result
+      } else if (typeof result === 'string') {
+        const numResult = parseInt(result, 10)
+        if (!isNaN(numResult)) {
+          return numResult
+        }
+      }
+      
+      return null
+    } catch (error) {
+      this.logError(`查找别名 "${alias}" 对应的块ID失败:`, error)
+      return null
+    }
+  }
+
 
   // 创建查询列表控制按钮
   private createQueryListToggleButton() {

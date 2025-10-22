@@ -103,6 +103,7 @@ export async function load(_name: string) {
       orca.notify("info", `反链别名块查询已${status}`);
     }
   }, "切换反链别名块查询");
+
 }
 
 export async function unload() {
