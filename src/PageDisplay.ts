@@ -1157,12 +1157,19 @@ export class PageDisplay {
 
   private sortReferencedGroup(items: PageDisplayItem[], tagBlockIds: DbId[], containedInBlockIds: DbId[]): void {
     items.sort((a, b) => {
-      const aIsPriority = tagBlockIds.includes(a.id) || containedInBlockIds.includes(a.id)
-      const bIsPriority = tagBlockIds.includes(b.id) || containedInBlockIds.includes(b.id)
+      const aIsContainedIn = containedInBlockIds.includes(a.id)
+      const bIsContainedIn = containedInBlockIds.includes(b.id)
+      const aIsTag = tagBlockIds.includes(a.id)
+      const bIsTag = tagBlockIds.includes(b.id)
 
-      if (aIsPriority && !bIsPriority) return -1
-      if (!aIsPriority && bIsPriority) return 1
-      return 0
+      // 优先级排序：包含于块 > 标签块 > 其他
+      if (aIsContainedIn && !bIsContainedIn) return -1  // 包含于块优先
+      if (!aIsContainedIn && bIsContainedIn) return 1
+      
+      if (aIsTag && !bIsTag) return -1  // 标签块次优先
+      if (!aIsTag && bIsTag) return 1
+      
+      return 0  // 其他保持原顺序
     })
   }
 
