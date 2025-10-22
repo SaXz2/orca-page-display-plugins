@@ -1146,7 +1146,7 @@ export class PageDisplay {
     const result = this.createEmptyGroups()
     const seen = new Set<string>()
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'referencing-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref', 'recursive-backref-alias']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
     for (const type of groupTypes) {
       const groupItems = source[type] ?? []
       for (const item of groupItems) {
@@ -1197,7 +1197,7 @@ export class PageDisplay {
 
   private cloneGroupedItems(grouped: DisplayGroupsMap): DisplayGroupsMap {
     const clone = this.createEmptyGroups()
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'referencing-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref', 'recursive-backref-alias']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
     for (const type of groupTypes) {
       clone[type] = [...(grouped[type] ?? [])]
     }
@@ -2642,7 +2642,7 @@ export class PageDisplay {
     const groupedItems = this.buildGroupedItems(groupSource, tagBlockIds, containedInBlockIds)
     const uniqueItems: PageDisplayItem[] = []
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'referencing-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref', 'recursive-backref-alias']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
     for (const type of groupTypes) {
       uniqueItems.push(...groupedItems[type])
     }
