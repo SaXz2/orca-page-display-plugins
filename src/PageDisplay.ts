@@ -1128,15 +1128,6 @@ export class PageDisplay {
     } as DisplayGroupsMap
   }
 
-  private getDisplayGroupDefinitions(): DisplayGroupDefinition[] {
-    return [
-      { type: 'tag', title: '标签', icon: '🏷️' },
-      { type: 'referenced', title: '被引用的块', icon: '📄' },
-      { type: 'referencing-alias', title: '引用当前块的别名', icon: '🔗' },
-      { type: 'child-referenced-alias', title: '子块引用的别名', icon: '📋' },
-      { type: 'backref-alias-blocks', title: '反链中的别名', icon: '↩️' }
-    ]
-  }
 
   private buildGroupedItems(
     source: Record<PageDisplayItemType, PageDisplayItem[]>,
@@ -1146,15 +1137,16 @@ export class PageDisplay {
     const result = this.createEmptyGroups()
     const seen = new Set<string>()
 
-    for (const definition of this.getDisplayGroupDefinitions()) {
-      const groupItems = source[definition.type] ?? []
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'referencing-alias', 'child-referenced-alias', 'backref-alias-blocks']
+    for (const type of groupTypes) {
+      const groupItems = source[type] ?? []
       for (const item of groupItems) {
         const key = this.getItemKey(item)
         if (seen.has(key)) {
           continue
         }
         seen.add(key)
-        result[definition.type].push(item)
+        result[type].push(item)
       }
     }
 
@@ -1176,8 +1168,9 @@ export class PageDisplay {
 
   private cloneGroupedItems(grouped: DisplayGroupsMap): DisplayGroupsMap {
     const clone = this.createEmptyGroups()
-    for (const definition of this.getDisplayGroupDefinitions()) {
-      clone[definition.type] = [...(grouped[definition.type] ?? [])]
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'referencing-alias', 'child-referenced-alias', 'backref-alias-blocks']
+    for (const type of groupTypes) {
+      clone[type] = [...(grouped[type] ?? [])]
     }
     return clone
   }
@@ -2230,7 +2223,7 @@ export class PageDisplay {
    */
   public forceUpdate() {
     this.retryCount = 0
-    this.performUpdate()
+    this.performUpdate(true) // 强制更新，跳过shouldSkipUpdate检查
   }
 
   /**
@@ -2259,17 +2252,18 @@ export class PageDisplay {
   /**
    * 执行实际更新
    * 获取当前块信息，处理各种类型的引用关系，创建显示内容
+   * @param force 是否强制更新，跳过shouldSkipUpdate检查
    */
-  private async performUpdate() {
-    this.log("performUpdate called")
+  private async performUpdate(force: boolean = false) {
+    this.log("performUpdate called", force ? "(forced)" : "")
 
     await this.settingsReady.catch(() => undefined)
 
     const rootBlockId = this.getCurrentRootBlockId()
     this.log("rootBlockId =", rootBlockId)
     
-    // 检查是否需要跳过更新
-    if (this.shouldSkipUpdate(rootBlockId)) {
+    // 检查是否需要跳过更新（除非强制更新）
+    if (!force && this.shouldSkipUpdate(rootBlockId)) {
       return
     }
     
@@ -2453,8 +2447,9 @@ export class PageDisplay {
     const groupedItems = this.buildGroupedItems(groupSource, tagBlockIds, containedInBlockIds)
     const uniqueItems: PageDisplayItem[] = []
 
-    for (const definition of this.getDisplayGroupDefinitions()) {
-      uniqueItems.push(...groupedItems[definition.type])
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'referencing-alias', 'child-referenced-alias', 'backref-alias-blocks']
+    for (const type of groupTypes) {
+      uniqueItems.push(...groupedItems[type])
     }
 
     return {
@@ -2936,17 +2931,17 @@ export class PageDisplay {
    * @param inlineRefIds 内联引用块ID列表，用于图标分配
    * @param containedInBlockIds 包含于块ID列表，用于图标分配
    */
-  private createDisplay(items: PageDisplayItem[], groupedItems: DisplayGroupsMap, tagBlockIds: DbId[] = [], inlineRefIds: DbId[] = [], containedInBlockIds: DbId[] = []) {
+  private createDisplay(items: PageDisplayItem[], groupedItems: DisplayGroupsMap, tagBlockIds: DbId[] = [], inlineRefIds: DbId[] = [], containedInBlockIds: DbId[] = [], panelId?: string) {
     this.log("PageDisplay: createDisplay called with", items.length, "items")
     this.log("PageDisplay: Items details:", items)
     this.log("PageDisplay: Tag block IDs:", tagBlockIds)
     
-    // 获取当前面板标识
-    const panelId = this.getCurrentPanelId()
-    this.log("PageDisplay: Current panel ID:", panelId)
+    // 获取面板标识（使用传入的panelId或当前面板ID）
+    const targetPanelId = panelId || this.getCurrentPanelId()
+    this.log("PageDisplay: Target panel ID:", targetPanelId)
     
-    // 移除当前面板的现有显示
-    this.removeDisplay(panelId)
+    // 移除目标面板的现有显示
+    this.removeDisplay(targetPanelId)
 
     // 查找目标位置，支持重试
     let targetElement = this.findTargetElement()
@@ -2968,7 +2963,7 @@ export class PageDisplay {
 
     // 创建容器
     const container = document.createElement('div')
-    container.setAttribute('data-panel-id', panelId) // 标记所属面板
+    container.setAttribute('data-panel-id', targetPanelId) // 标记所属面板
     this.applyStyles(container, 'page-display-container')
 
     // 创建标题容器
@@ -3482,7 +3477,7 @@ export class PageDisplay {
     }
     
     // 存储容器引用
-    this.containers.set(panelId, container)
+    this.containers.set(targetPanelId, container)
     
     this.log("PageDisplay: Container inserted using method:", insertMethod)
     this.log("PageDisplay: Container parent:", container.parentNode)
@@ -3504,308 +3499,12 @@ export class PageDisplay {
    */
   private createDisplayForPanel(items: PageDisplayItem[], groupedItems: DisplayGroupsMap, tagBlockIds: DbId[] = [], inlineRefIds: DbId[] = [], containedInBlockIds: DbId[] = [], panelId: string) {
     this.log("PageDisplay: createDisplayForPanel called with", items.length, "items for panel", panelId)
-    this.log("PageDisplay: Items details:", items)
-    this.log("PageDisplay: Tag block IDs:", tagBlockIds)
     
     // 移除指定面板的现有显示
     this.removeDisplay(panelId)
-
-    // 查找目标位置，支持重试
-    let targetElement = this.findTargetElement()
     
-    // 如果找不到目标元素，延迟重试
-    if (!targetElement) {
-      this.log("PageDisplay: No target element found, retrying in 500ms...")
-      setTimeout(() => {
-        targetElement = this.findTargetElement()
-        if (targetElement) {
-          this.createDisplayForPanel(items, groupedItems, tagBlockIds, inlineRefIds, containedInBlockIds, panelId)
-        } else {
-          this.logError("PageDisplay: Still no target element found after retry")
-          throw new Error("No target element found")
-        }
-      }, 500)
-      return
-    }
-
-    // 创建容器
-    const container = document.createElement('div')
-    container.setAttribute('data-panel-id', panelId) // 标记所属面板
-    this.applyStyles(container, 'page-display-container')
-
-    // 创建标题容器
-    const titleContainer = document.createElement('div')
-    this.applyStyles(titleContainer, 'page-display-title-container')
-    
-    // 创建左侧内容容器
-    const leftContent = document.createElement('div')
-    this.applyStyles(leftContent, 'page-display-left-content')
-    
-    // 创建折叠箭头
-    const arrow = document.createElement('span')
-    arrow.textContent = '▶'
-    this.applyStyles(arrow, 'page-display-arrow')
-    
-    // 设置初始状态：根据当前页面状态设置箭头方向
-    if (!this.getCurrentPageCollapseState()) {
-      arrow.style.transform = 'rotate(90deg)'
-    }
-    
-    // 创建标题文本
-    const title = document.createElement('span')
-    title.textContent = '页面空间'
-    this.applyStyles(title, 'page-display-title')
-    
-    // 创建页面计数
-    const pageCount = document.createElement('span')
-    pageCount.textContent = `(${items.length})`
-    this.applyStyles(pageCount, 'page-display-count')
-    
-    // 组装标题容器
-    leftContent.appendChild(arrow)
-    leftContent.appendChild(title)
-    leftContent.appendChild(pageCount)
-    titleContainer.appendChild(leftContent)
-    
-    // 创建搜索容器
-    const searchContainer = document.createElement('div')
-    this.applyStyles(searchContainer, 'page-display-search-container')
-    
-    // 创建搜索图标
-    const searchIcon = document.createElement('i')
-    searchIcon.textContent = '🔍'
-    this.applyStyles(searchIcon, 'page-display-search-icon')
-    
-    // 创建搜索输入框
-    const searchInput = document.createElement('input')
-    searchInput.type = 'text'
-    searchInput.placeholder = '搜索页面...'
-    this.applyStyles(searchInput, 'page-display-search-input')
-    
-    // 组装搜索容器
-    searchContainer.appendChild(searchIcon)
-    searchContainer.appendChild(searchInput)
-    
-    // 创建项目列表
-    const list = document.createElement('ul')
-    this.applyStyles(list, 'page-display-list')
-    
-    // 存储原始项目列表用于搜索
-    const originalItems = [...items]
-    
-    // 创建项目元素的函数
-    const createItemElement = (item: PageDisplayItem) => {
-      const itemElement = document.createElement('li')
-      this.applyStyles(itemElement, 'page-display-item')
-      
-      // 创建图标
-      if (this.showIcons) {
-        const icon = document.createElement('span')
-        this.applyStyles(icon, 'page-display-item-icon')
-        
-        // 根据项目类型设置图标
-        if (item.itemType === 'tag') {
-          icon.textContent = '🏷️'
-        } else if (item.itemType === 'referenced') {
-          icon.textContent = '📄'
-        } else if (item.itemType === 'referencing-alias') {
-          icon.textContent = '🔗'
-        } else if (item.itemType === 'child-referenced-alias') {
-          icon.textContent = '📋'
-        } else if (item.itemType === 'backref-alias-blocks') {
-          icon.textContent = '↩️'
-        } else {
-          icon.textContent = '📄'
-        }
-        
-        itemElement.appendChild(icon)
-      }
-      
-      // 创建文本
-      const text = document.createElement('span')
-      text.textContent = item.text
-      this.applyStyles(text, 'page-display-item-text')
-      
-      // 应用多行/单行样式
-      this.applyLineStyles(text, this.multiLine)
-      
-      itemElement.appendChild(text)
-      
-      // 添加点击事件
-      itemElement.addEventListener('click', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        this.openBlock(item.id)
-      })
-      
-      return itemElement
-    }
-    
-    // 过滤项目的函数
-    const filterItems = (keyword: string) => {
-      if (!keyword.trim()) return originalItems
-      
-      const lowerKeyword = keyword.toLowerCase()
-      return originalItems.filter(item => {
-        // 优先使用可搜索文本
-        if (item.searchableText) {
-          return item.searchableText.toLowerCase().includes(lowerKeyword)
-        }
-        
-        // 回退到基本文本匹配
-        return item.text.toLowerCase().includes(lowerKeyword) ||
-               item.aliases.some(alias => alias.toLowerCase().includes(lowerKeyword))
-      })
-    }
-    
-    // 更新显示的函数
-    const updateDisplay = () => {
-      const searchTerm = searchInput.value
-      const filteredItems = filterItems(searchTerm)
-      
-      // 更新页面统计
-      const totalCount = originalItems.length
-      const filteredCount = filteredItems.length
-      if (searchTerm.trim()) {
-        pageCount.textContent = `(${filteredCount}/${totalCount})`
-      } else {
-        pageCount.textContent = `(${totalCount})`
-      }
-      
-      // 清空列表
-      list.innerHTML = ''
-      
-      // 添加过滤后的项目
-      filteredItems.forEach(item => {
-        const itemElement = createItemElement(item)
-        list.appendChild(itemElement)
-      })
-    }
-    
-    // 添加搜索事件监听
-    searchInput.addEventListener('input', updateDisplay)
-    
-    // 添加折叠/展开功能
-    arrow.addEventListener('click', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      
-      const isCollapsed = arrow.style.transform === 'rotate(0deg)' || arrow.style.transform === ''
-      if (isCollapsed) {
-        arrow.style.transform = 'rotate(90deg)'
-        searchContainer.style.display = 'block'
-        searchContainer.style.opacity = '1'
-        list.style.display = 'block'
-        this.setCurrentPageCollapseState(false)
-      } else {
-        arrow.style.transform = 'rotate(0deg)'
-        searchContainer.style.display = 'none'
-        searchContainer.style.opacity = '0'
-        list.style.display = 'none'
-        this.setCurrentPageCollapseState(true)
-      }
-    })
-    
-    // 组装容器
-    container.appendChild(titleContainer)
-    container.appendChild(searchContainer)
-    container.appendChild(list)
-    
-    // 应用多列样式
-    if (this.multiColumn) {
-      this.applyMultiColumnStyles(list)
-    }
-    
-    // 插入到目标位置 - 改进的插入逻辑
-    const placeholderElement = targetElement.querySelector('.orca-block-editor-placeholder')
-    this.log("PageDisplay: (createDisplayForPanel) placeholderElement found:", placeholderElement !== null)
-    this.log("PageDisplay: (createDisplayForPanel) targetElement:", targetElement)
-    
-    let insertSuccess = false
-    let insertMethod = ""
-    
-    if (placeholderElement) {
-      try {
-        this.log("PageDisplay: (createDisplayForPanel) Checking parentNode and nextSibling...")
-        const parentNode = placeholderElement.parentNode
-        const nextSibling = placeholderElement.nextSibling
-        
-        this.log("PageDisplay: (createDisplayForPanel) parentNode:", parentNode)
-        this.log("PageDisplay: (createDisplayForPanel) nextSibling:", nextSibling)
-        
-        if (parentNode) {
-          if (nextSibling) {
-            // nextSibling存在，正常插入
-            this.log("PageDisplay: (createDisplayForPanel) Inserting before nextSibling")
-            parentNode.insertBefore(container, nextSibling)
-            insertMethod = "insertBefore-nextSibling"
-          } else {
-            // nextSibling为null，插入到父元素末尾
-            this.log("PageDisplay: (createDisplayForPanel) nextSibling is null, appending to parent")
-            parentNode.appendChild(container)
-            insertMethod = "appendChild-parent"
-          }
-          insertSuccess = true
-        } else {
-          this.logWarn("PageDisplay: (createDisplayForPanel) parentNode is null, falling back to targetElement")
-          targetElement.appendChild(container)
-          insertMethod = "appendChild-targetElement"
-          insertSuccess = true
-        }
-      } catch (error) {
-        this.logError("PageDisplay: (createDisplayForPanel) Insert before failed:", error)
-        // 插入失败，回退到targetElement
-        targetElement.appendChild(container)
-        insertMethod = "appendChild-fallback"
-        insertSuccess = true
-      }
-    } else {
-      this.log("PageDisplay: (createDisplayForPanel) No placeholder found, inserting at end of target element")
-      targetElement.appendChild(container)
-      insertMethod = "appendChild-noPlaceholder"
-      insertSuccess = true
-    }
-    
-    // 验证插入是否成功
-    if (insertSuccess) {
-      setTimeout(() => {
-        const stillInDOM = document.contains(container)
-        const hasParent = container.parentNode !== null
-        const containerVisible = container.offsetHeight > 0
-        
-        this.log(`PageDisplay: (createDisplayForPanel) Insert verification (${insertMethod}):`)
-        this.log("  - Still in DOM:", stillInDOM)
-        this.log("  - Has parent:", hasParent)
-        this.log("  - Parent element:", container.parentNode)
-        this.log("  - Container visible:", containerVisible)
-        
-        if (!stillInDOM) {
-          this.logError("PageDisplay: (createDisplayForPanel) Container was removed from DOM! Attempting recovery...")
-          // 尝试重新插入到相同的目标位置
-          setTimeout(() => {
-            if (targetElement && !document.contains(container)) {
-              try {
-                targetElement.appendChild(container)
-                this.log("PageDisplay: (createDisplayForPanel) Recovery insert attempted")
-              } catch (recoveryError) {
-                this.logError("PageDisplay: (createDisplayForPanel) Recovery insert failed:", recoveryError)
-              }
-            }
-          }, 100)
-        }
-      }, 50) // 等待DOM稳定
-    }
-    
-    // 存储容器引用
-    this.containers.set(panelId, container)
-    
-    this.log("PageDisplay: Container inserted for panel", panelId, "using method:", insertMethod)
-    this.log("PageDisplay: Container parent:", container.parentNode)
-    this.log("PageDisplay: Container visible:", container.offsetHeight > 0)
-    
-    // 创建查询列表控制按钮
-    this.createQueryListToggleButton()
-    this.updateQueryListButton()
+    // 复用createDisplay的逻辑，但指定面板ID
+    this.createDisplay(items, groupedItems, tagBlockIds, inlineRefIds, containedInBlockIds, panelId)
   }
   
   // 开始定期检查
@@ -3851,9 +3550,17 @@ export class PageDisplay {
   private isDisplaying(): boolean {
     const panelId = this.getCurrentPanelId()
     const container = this.containers.get(panelId)
-    return container !== undefined && 
-           container.parentNode !== null && 
-           container.offsetHeight > 0
+    if (!container || !container.parentNode) {
+      return false
+    }
+    
+    // 检查容器是否在DOM中且可见
+    const isInDOM = document.contains(container)
+    const hasParent = container.parentNode !== null
+    
+    // 即使容器被折叠（display: none），只要容器存在且已插入DOM，就认为正在显示
+    // 因为折叠状态是用户的选择，不应该影响"是否正在显示"的判断
+    return isInDOM && hasParent
   }
 
   // 检查是否存在查询列表
@@ -4002,8 +3709,8 @@ export class PageDisplay {
     }
     
     this.logWarn("PageDisplay: All strategies failed to find target element")
-      return null
-    }
+    return null
+  }
 
   /**
    * 移除显示
