@@ -104,6 +104,31 @@ export async function load(_name: string) {
     }
   }, "切换反链别名块查询");
 
+  // 添加类型过滤面板切换命令
+  orca.commands.registerCommand(`${pluginName}.toggleTypeFilters`, () => {
+    if (pageDisplay) {
+      pageDisplay.toggleTypeFilters();
+      const status = pageDisplay.getTypeFiltersVisible() ? "显示" : "隐藏";
+      orca.notify("info", `类型过滤面板已${status}`);
+    }
+  }, "切换类型过滤面板");
+
+  // 添加全选类型过滤命令
+  orca.commands.registerCommand(`${pluginName}.selectAllTypeFilters`, () => {
+    if (pageDisplay) {
+      pageDisplay.setAllTypeFilters(true);
+      orca.notify("info", "已选择所有类型");
+    }
+  }, "全选所有类型");
+
+  // 添加全不选类型过滤命令
+  orca.commands.registerCommand(`${pluginName}.selectNoneTypeFilters`, () => {
+    if (pageDisplay) {
+      pageDisplay.setAllTypeFilters(false);
+      orca.notify("info", "已取消选择所有类型");
+    }
+  }, "取消选择所有类型");
+
 }
 
 export async function unload() {

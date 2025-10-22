@@ -803,6 +803,12 @@ export class PageDisplay {
   /** 调试模式开关 */
   private debugMode: boolean = false
   
+  // === 类型过滤控制属性 ===
+  /** 控制类型过滤面板是否显示 */
+  private showTypeFilters: boolean = false
+  /** 类型过滤状态，key为类型，value为是否显示 */
+  private typeFilters: Map<PageDisplayItemType, boolean> = new Map()
+  
   // === 缓存相关属性已移至ApiService ===
 
   /**
@@ -819,6 +825,9 @@ export class PageDisplay {
     this.settingsReady = this.loadSettings()
     // 调试模式默认关闭
     this.debugMode = false
+    
+    // 初始化类型过滤状态，默认所有类型都显示
+    this.initializeTypeFilters()
     
     // 清理过期缓存
     this.clearExpiredCache()
@@ -1030,6 +1039,403 @@ export class PageDisplay {
   // 获取反链别名块查询状态
   public getBackrefAliasQueryEnabled(): boolean {
     return this.backrefAliasQueryEnabled
+  }
+
+  // === 类型过滤相关方法 ===
+  
+  /**
+   * 初始化类型过滤状态
+   * 默认所有类型都显示
+   */
+  private initializeTypeFilters(): void {
+    const allTypes: PageDisplayItemType[] = [
+      'tag', 'referenced', 'referencing-alias', 'child-referenced-alias', 
+      'backref-alias-blocks', 'backref', 'recursive-backref', 'recursive-backref-alias'
+    ]
+    
+    allTypes.forEach(type => {
+      this.typeFilters.set(type, true) // 默认都显示
+    })
+  }
+
+  /**
+   * 切换类型过滤面板显示状态
+   */
+  public toggleTypeFilters(): void {
+    this.showTypeFilters = !this.showTypeFilters
+    this.saveSettings()
+    
+    // 如果当前面板有显示，重新创建以应用新的过滤面板设置
+    const panelId = this.getCurrentPanelId()
+    const container = this.containers.get(panelId)
+    if (container) {
+      this.updateDisplay()
+    }
+  }
+
+  /**
+   * 获取类型过滤面板显示状态
+   * @returns 是否显示类型过滤面板
+   */
+  public getTypeFiltersVisible(): boolean {
+    return this.showTypeFilters
+  }
+
+  /**
+   * 设置特定类型的显示状态
+   * @param type 类型
+   * @param visible 是否显示
+   */
+  public setTypeFilter(type: PageDisplayItemType, visible: boolean): void {
+    this.typeFilters.set(type, visible)
+    this.saveSettings()
+    
+    // 注意：不在这里调用updateDisplay，由调用方决定何时更新
+  }
+
+  /**
+   * 获取特定类型的显示状态
+   * @param type 类型
+   * @returns 是否显示
+   */
+  public getTypeFilter(type: PageDisplayItemType): boolean {
+    return this.typeFilters.get(type) ?? true
+  }
+
+  /**
+   * 切换特定类型的显示状态
+   * @param type 类型
+   */
+  public toggleTypeFilter(type: PageDisplayItemType): void {
+    const currentState = this.getTypeFilter(type)
+    this.setTypeFilter(type, !currentState)
+  }
+
+  /**
+   * 设置所有类型的显示状态
+   * @param visible 是否显示所有类型
+   */
+  public setAllTypeFilters(visible: boolean): void {
+    this.typeFilters.forEach((_, type) => {
+      this.typeFilters.set(type, visible)
+    })
+    this.saveSettings()
+    
+    // 注意：不在这里调用updateDisplay，由调用方决定何时更新
+  }
+
+  /**
+   * 获取所有类型的过滤状态
+   * @returns 类型过滤状态映射
+   */
+  public getAllTypeFilters(): Map<PageDisplayItemType, boolean> {
+    return new Map(this.typeFilters)
+  }
+
+  /**
+   * 创建类型过滤控制面板
+   * @returns 类型过滤面板元素
+   */
+  private createTypeFilterPanel(): HTMLElement {
+    const panel = document.createElement('div')
+    panel.className = 'page-display-type-filter-panel'
+    this.applyStyles(panel, 'page-display-type-filter-panel')
+    
+    // 设置初始显示状态
+    panel.style.display = this.showTypeFilters ? 'block' : 'none'
+    
+    // 创建面板标题和按钮容器
+    const titleContainer = document.createElement('div')
+    titleContainer.className = 'page-display-type-filter-title-container'
+    this.applyStyles(titleContainer, 'page-display-type-filter-title-container')
+    
+    // 设置flex布局，标题在左，按钮在右
+    titleContainer.style.cssText = `
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      padding: 8px;
+    `
+    
+    // 创建标题
+    const title = document.createElement('div')
+    title.className = 'page-display-type-filter-title'
+    title.textContent = '类型过滤'
+    this.applyStyles(title, 'page-display-type-filter-title')
+    
+    // 创建标题右侧的按钮
+    const titleButtons = document.createElement('div')
+    titleButtons.className = 'page-display-type-filter-title-buttons'
+    this.applyStyles(titleButtons, 'page-display-type-filter-title-buttons')
+    
+    // 设置按钮水平排列
+    titleButtons.style.cssText = `
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    `
+    
+    const selectAllBtn = document.createElement('button')
+    selectAllBtn.textContent = '全选'
+    selectAllBtn.className = 'page-display-type-filter-title-btn'
+    
+    // 设置按钮样式
+    selectAllBtn.style.cssText = `
+      padding: 4px 8px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    `
+    
+    // 添加悬浮效果
+    selectAllBtn.addEventListener('mouseenter', () => {
+      selectAllBtn.style.background = 'rgba(255, 255, 255, 0.2)'
+    })
+    selectAllBtn.addEventListener('mouseleave', () => {
+      selectAllBtn.style.background = 'rgba(255, 255, 255, 0.1)'
+    })
+    selectAllBtn.addEventListener('click', () => {
+      optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+        (checkbox as HTMLInputElement).checked = true
+      })
+    })
+    
+    const selectNoneBtn = document.createElement('button')
+    selectNoneBtn.textContent = '全不选'
+    selectNoneBtn.className = 'page-display-type-filter-title-btn'
+    
+    // 应用相同的按钮样式
+    selectNoneBtn.style.cssText = selectAllBtn.style.cssText
+    selectNoneBtn.addEventListener('mouseenter', () => {
+      selectNoneBtn.style.background = 'rgba(255, 255, 255, 0.2)'
+    })
+    selectNoneBtn.addEventListener('mouseleave', () => {
+      selectNoneBtn.style.background = 'rgba(255, 255, 255, 0.1)'
+    })
+    selectNoneBtn.addEventListener('click', () => {
+      optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+        (checkbox as HTMLInputElement).checked = false
+      })
+    })
+    
+    const confirmBtn = document.createElement('button')
+    confirmBtn.textContent = '确认'
+    confirmBtn.className = 'page-display-type-filter-confirm-btn'
+    
+    // 设置确认按钮样式（绿色主题）
+    confirmBtn.style.cssText = `
+      padding: 4px 8px;
+      font-size: 12px;
+      background: rgba(34, 197, 94, 0.2);
+      color: white;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    `
+    
+    confirmBtn.addEventListener('mouseenter', () => {
+      confirmBtn.style.background = 'rgba(34, 197, 94, 0.3)'
+    })
+    confirmBtn.addEventListener('mouseleave', () => {
+      confirmBtn.style.background = 'rgba(34, 197, 94, 0.2)'
+    })
+    confirmBtn.addEventListener('click', () => {
+      // 应用所有复选框的状态
+      optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+        const input = checkbox as HTMLInputElement
+        const type = input.id.replace('type-filter-', '') as PageDisplayItemType
+        this.setTypeFilter(type, input.checked)
+      })
+      
+      // 强制更新显示
+      this.forceUpdate()
+      
+      // 隐藏面板
+      this.toggleTypeFilters()
+      panel.style.display = 'none'
+    })
+    
+    const cancelBtn = document.createElement('button')
+    cancelBtn.textContent = '取消'
+    cancelBtn.className = 'page-display-type-filter-cancel-btn'
+    
+    // 设置取消按钮样式（红色主题）
+    cancelBtn.style.cssText = `
+      padding: 4px 8px;
+      font-size: 12px;
+      background: rgba(239, 68, 68, 0.2);
+      color: white;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    `
+    
+    cancelBtn.addEventListener('mouseenter', () => {
+      cancelBtn.style.background = 'rgba(239, 68, 68, 0.3)'
+    })
+    cancelBtn.addEventListener('mouseleave', () => {
+      cancelBtn.style.background = 'rgba(239, 68, 68, 0.2)'
+    })
+    cancelBtn.addEventListener('click', () => {
+      // 恢复原始状态
+      optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+        const input = checkbox as HTMLInputElement
+        const type = input.id.replace('type-filter-', '') as PageDisplayItemType
+        input.checked = this.getTypeFilter(type)
+      })
+      // 隐藏面板
+      this.toggleTypeFilters()
+      panel.style.display = 'none'
+    })
+    
+    titleButtons.appendChild(selectAllBtn)
+    titleButtons.appendChild(selectNoneBtn)
+    titleButtons.appendChild(confirmBtn)
+    titleButtons.appendChild(cancelBtn)
+    
+    titleContainer.appendChild(title)
+    titleContainer.appendChild(titleButtons)
+    
+    // 创建过滤选项容器 - 使用水平多列布局
+    const optionsContainer = document.createElement('div')
+    optionsContainer.className = 'page-display-type-filter-options'
+    
+    // 直接设置内联样式确保布局正确
+    optionsContainer.style.cssText = `
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+      padding: 8px;
+    `
+    
+    // 类型配置 - 重新组织为更紧凑的布局
+    const typeConfigs = [
+      { type: 'tag', label: '标签', icon: 'ti-hash' },
+      { type: 'referenced', label: '被引用', icon: 'ti-arrow-up' },
+      { type: 'referencing-alias', label: '引用别名', icon: 'ti-arrow-right' },
+      { type: 'child-referenced-alias', label: '子块别名', icon: 'ti-cube' },
+      { type: 'backref-alias-blocks', label: '反链别名', icon: 'ti-zoom-question' },
+      { type: 'backref', label: '直接反链', icon: 'ti-arrow-down' },
+      { type: 'recursive-backref', label: '递归反链', icon: 'ti-arrow-down-right' },
+      { type: 'recursive-backref-alias', label: '递归别名', icon: 'ti-arrow-right' }
+    ]
+    
+    // 创建每个类型的复选框 - 更紧凑的布局
+    typeConfigs.forEach(config => {
+      const option = document.createElement('div')
+      option.className = 'page-display-type-filter-option'
+      
+      // 设置选项样式
+      option.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.05);
+        transition: background 0.2s;
+      `
+      
+      // 添加悬浮效果
+      option.addEventListener('mouseenter', () => {
+        option.style.background = 'rgba(255, 255, 255, 0.1)'
+      })
+      option.addEventListener('mouseleave', () => {
+        option.style.background = 'rgba(255, 255, 255, 0.05)'
+      })
+      
+      const checkbox = document.createElement('input')
+      checkbox.type = 'checkbox'
+      checkbox.id = `type-filter-${config.type}`
+      checkbox.checked = this.getTypeFilter(config.type as PageDisplayItemType)
+      checkbox.className = 'page-display-type-filter-checkbox'
+      
+      // 设置复选框样式
+      checkbox.style.cssText = `
+        margin: 0;
+        margin-right: 6px;
+        cursor: pointer;
+      `
+      
+      const label = document.createElement('label')
+      label.htmlFor = `type-filter-${config.type}`
+      label.className = 'page-display-type-filter-label'
+      
+      // 设置标签样式
+      label.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        color: white;
+        user-select: none;
+      `
+      
+      // 创建标签内容 - 更紧凑
+      const labelContent = document.createElement('div')
+      labelContent.className = 'page-display-type-filter-label-content'
+      
+      // 设置标签内容样式
+      labelContent.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      `
+      
+      // 添加图标
+      const icon = document.createElement('span')
+      icon.className = `ti ${config.icon}`
+      icon.style.cssText = `
+        font-size: 12px;
+        color: white;
+      `
+      
+      // 添加文本
+      const text = document.createElement('span')
+      text.textContent = config.label
+      text.style.cssText = `
+        font-size: 12px;
+        color: white;
+      `
+      
+      labelContent.appendChild(icon)
+      labelContent.appendChild(text)
+      label.appendChild(labelContent)
+      
+      // 不添加实时更新事件监听器，改为在确认时统一处理
+      
+      option.appendChild(checkbox)
+      option.appendChild(label)
+      optionsContainer.appendChild(option)
+    })
+    
+    
+    panel.appendChild(titleContainer)
+    panel.appendChild(optionsContainer)
+    
+    return panel
+  }
+
+  /**
+   * 更新类型过滤面板中的复选框状态
+   * @param panel 过滤面板元素
+   */
+  private updateTypeFilterPanelCheckboxes(panel: HTMLElement): void {
+    const checkboxes = panel.querySelectorAll('input[type="checkbox"]')
+    checkboxes.forEach((checkbox) => {
+      const input = checkbox as HTMLInputElement
+      const type = input.id.replace('type-filter-', '') as PageDisplayItemType
+      input.checked = this.getTypeFilter(type)
+    })
   }
   
   /**
@@ -3330,11 +3736,23 @@ export class PageDisplay {
     searchIcon.className = 'page-display-search-icon'
     this.applyStyles(searchIcon, 'page-display-search-icon')
     
+    // 创建类型过滤图标
+    const filterIcon = document.createElement('div')
+    filterIcon.textContent = '⚙️'
+    filterIcon.className = 'page-display-filter-icon'
+    this.applyStyles(filterIcon, 'page-display-filter-icon')
+    
     leftContent.appendChild(arrow)
     leftContent.appendChild(title)
     leftContent.appendChild(pageCount)
     titleContainer.appendChild(leftContent)
     titleContainer.appendChild(searchIcon)
+    titleContainer.appendChild(filterIcon)
+    
+    // 创建类型过滤控制面板
+    const typeFilterPanel = this.createTypeFilterPanel()
+    container.appendChild(typeFilterPanel)
+    
     container.appendChild(titleContainer)
     
     // 折叠状态和搜索状态
@@ -3360,6 +3778,28 @@ export class PageDisplay {
       // 鼠标移出搜索按钮时总是隐藏
       searchIcon.style.opacity = '0'
       searchIcon.style.background = 'var(--page-display-search-bg)'
+    })
+    
+    // 过滤图标悬浮效果和点击事件
+    filterIcon.addEventListener('mouseenter', () => {
+      filterIcon.style.opacity = '1'
+      filterIcon.style.background = 'var(--page-display-search-bg-hover)'
+    })
+    
+    filterIcon.addEventListener('mouseleave', () => {
+      filterIcon.style.opacity = '0'
+      filterIcon.style.background = 'var(--page-display-search-bg)'
+    })
+    
+    filterIcon.addEventListener('click', () => {
+      this.toggleTypeFilters()
+      // 更新过滤面板显示状态
+      typeFilterPanel.style.display = this.showTypeFilters ? 'block' : 'none'
+      
+      // 如果面板显示，需要更新复选框状态以反映当前过滤状态
+      if (this.showTypeFilters) {
+        this.updateTypeFilterPanelCheckboxes(typeFilterPanel)
+      }
     })
     
     // 标题容器悬浮效果（只在右侧区域悬浮时显示搜索图标）
@@ -3482,7 +3922,7 @@ export class PageDisplay {
     searchInput.className = 'page-display-search-input'
     this.applyStyles(searchInput, 'page-display-search-input')
     
-    // 存储原始项目数据
+    // 存储原始项目数据 - 使用传入的items，这些已经包含了所有项目
     const originalItems = [...items]
     
     // 简化的搜索过滤函数
@@ -3525,6 +3965,17 @@ export class PageDisplay {
     const updateDisplay = () => {
       const searchTerm = searchInput.value
       let filteredItems = filterItems(searchTerm)
+      
+      // 应用类型过滤
+      const beforeFilterCount = filteredItems.length
+      filteredItems = filteredItems.filter(item => {
+        const isVisible = this.getTypeFilter(item.itemType)
+        if (!isVisible) {
+          this.log(`PageDisplay: 过滤掉类型 ${item.itemType} 的项目: ${item.text}`)
+        }
+        return isVisible
+      })
+      this.log(`PageDisplay: 过滤前: ${beforeFilterCount} 项, 过滤后: ${filteredItems.length} 项`)
       
       // 对过滤后的项目进行置顶排序：包含于块(非子标签)置顶显示
       filteredItems = filteredItems.sort((a, b) => {
