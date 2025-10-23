@@ -848,6 +848,14 @@ export class PageDisplay {
   private backrefAliasQueryEnabled: boolean = true
   /** 防抖定时器，避免频繁更新 */
   private updateTimeout: number | null = null
+  /** 懒加载批次大小 */
+  private readonly LAZY_LOAD_BATCH_SIZE = 120
+  /** 懒加载阈值，超过此数量自动启用懒加载 */
+  private readonly LAZY_LOAD_THRESHOLD = 70
+  /** 当前显示的批次 */
+  private currentBatch: number = 0
+  /** 滚动加载观察器 */
+  private scrollObserver: IntersectionObserver | null = null
   /** 定期检查定时器，用于检测页面变化 */
   private periodicCheckInterval: number | null = null
   /** 页面切换检查定时器 */
@@ -1861,6 +1869,12 @@ const typeConfigs = [
     if (this.updateTimeout) {
       clearTimeout(this.updateTimeout)
       this.updateTimeout = null
+    }
+    
+    // 清理滚动观察器
+    if (this.scrollObserver) {
+      this.scrollObserver.disconnect()
+      this.scrollObserver = null
     }
     
     // 清理定期检查定时器
@@ -5428,6 +5442,9 @@ const typeConfigs = [
       const searchTerm = searchInput.value
       let filteredItems = filterItems(searchTerm)
       
+      // 重置懒加载批次
+      this.currentBatch = 0
+      
       // 应用类型过滤
       const beforeFilterCount = filteredItems.length
       filteredItems = filteredItems.filter(item => {
@@ -5473,8 +5490,88 @@ const typeConfigs = [
       // 清空现有列表
       list.innerHTML = ''
       
-      // 重新创建过滤后的项目
-      filteredItems.forEach(item => {
+      // 检查是否需要懒加载
+      if (filteredItems.length > this.LAZY_LOAD_THRESHOLD) {
+        renderItemsWithLazyLoading(list, filteredItems, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
+      } else {
+        // 直接渲染所有项目
+        renderItems(list, filteredItems, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
+      }
+    }
+    
+    // 使用懒加载渲染项目列表
+    const renderItemsWithLazyLoading = (list: HTMLElement, items: PageDisplayItem[], searchInput: HTMLInputElement, tagBlockIds: DbId[], inlineRefIds: DbId[], containedInBlockIds: DbId[]) => {
+      // 清理之前的观察器
+      if (this.scrollObserver) {
+        this.scrollObserver.disconnect()
+        this.scrollObserver = null
+      }
+
+      // 计算当前应该显示的所有项目（从开始到当前批次）
+      const endIndex = (this.currentBatch + 1) * this.LAZY_LOAD_BATCH_SIZE
+      const itemsToShow = items.slice(0, Math.min(endIndex, items.length))
+      
+      // 渲染所有应该显示的项目
+      renderItems(list, itemsToShow, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
+
+      // 如果还有更多项目，添加滚动加载触发器
+      if (endIndex < items.length) {
+        addScrollLoadTrigger(list, items, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
+      }
+    }
+    
+    // 添加滚动加载触发器
+    const addScrollLoadTrigger = (list: HTMLElement, items: PageDisplayItem[], searchInput: HTMLInputElement, tagBlockIds: DbId[], inlineRefIds: DbId[], containedInBlockIds: DbId[]) => {
+      // 创建加载触发器元素
+      const loadTrigger = document.createElement('li')
+      loadTrigger.className = 'page-display-scroll-trigger'
+      loadTrigger.style.cssText = `
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-secondary, #666);
+        font-size: 12px;
+      `
+      
+      // 显示加载状态
+      const loadingText = document.createElement('span')
+      loadingText.textContent = '滚动加载更多...'
+      loadTrigger.appendChild(loadingText)
+      list.appendChild(loadTrigger)
+
+      // 创建Intersection Observer
+      this.scrollObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              // 当触发器进入视口时，加载下一批
+              this.currentBatch++
+              
+              // 更新加载文本
+              loadingText.textContent = '正在加载...'
+              
+              // 延迟一点时间让用户看到加载状态
+              setTimeout(() => {
+                renderItemsWithLazyLoading(list, items, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
+              }, 100)
+            }
+          })
+        },
+        {
+          root: null,
+          rootMargin: '50px', // 提前50px开始加载
+          threshold: 0.1
+        }
+      )
+
+      // 开始观察触发器
+      this.scrollObserver.observe(loadTrigger)
+    }
+    
+    // 渲染项目列表（支持懒加载）
+    const renderItems = (list: HTMLElement, items: PageDisplayItem[], searchInput: HTMLInputElement, tagBlockIds: DbId[], inlineRefIds: DbId[], containedInBlockIds: DbId[]) => {
+      items.forEach(item => {
         const itemElement = document.createElement('li')
         itemElement.className = `page-display-item${this.multiLine ? ' multi-line' : ' single-line'} ${item.itemType}`
         this.applyStyles(itemElement, 'page-display-item')
