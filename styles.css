@@ -1,0 +1,83 @@
+/* Page Display Plugin Styles */
+
+/* 查询列表隐藏样式 - 用于隐藏底部查询别名块 */
+.page-display-query-list-hidden {
+    display: none !important;
+}
+
+/* 查询列表块隐藏样式 - 更具体的选择器 */
+.orca-query-list-block.page-display-query-list-hidden {
+    display: none !important;
+}
+
+/* 查询列表块内容隐藏样式 */
+.orca-query-list-block.page-display-query-list-hidden .orca-block.orca-container.orca-block-postfix.orca-query-list-block-block {
+    display: none !important;
+}
+
+/* 功能按钮容器样式 */
+.page-display-function-buttons-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 8px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+/* 功能按钮基础样式 */
+.page-display-search-icon,
+.page-display-filter-icon,
+.page-display-icons-toggle-icon,
+.page-display-multiline-toggle-icon,
+.page-display-multicolumn-toggle-icon {
+    width: 28px;
+    height: 28px;
+    background: var(--orca-color-bg-1);
+    border: 1px solid var(--orca-color-border-1);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-left: 8px;
+    flex-shrink: 0;
+    font-size: 14px;
+    color: var(--orca-color-text-2);
+    transition: all 0.2s ease;
+}
+
+/* 功能按钮悬浮效果 */
+.page-display-search-icon:hover,
+.page-display-filter-icon:hover,
+.page-display-icons-toggle-icon:hover,
+.page-display-multiline-toggle-icon:hover,
+.page-display-multicolumn-toggle-icon:hover {
+    background: var(--orca-color-bg-2);
+    color: var(--orca-color-text-1);
+}
+
+/* 查询列表切换按钮样式 */
+.page-display-query-list-toggle {
+    width: 28px;
+    height: 28px;
+    background: var(--orca-color-bg-1);
+    border: 1px solid var(--orca-color-border-1);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-left: 8px;
+    opacity: 0;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    font-size: 14px;
+    color: var(--orca-color-text-2);
+}
+
+.page-display-query-list-toggle:hover {
+    opacity: 1;
+    background: var(--orca-color-bg-2);
+    color: var(--orca-color-text-1);
+}

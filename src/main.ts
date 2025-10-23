@@ -12,6 +12,15 @@ export async function load(_name: string) {
 
   setupL10N(orca.state.locale, { "zh-CN": zhCN });
 
+  // 注入CSS样式文件
+  try {
+    // 使用官方API注入CSS，参考orca-tune-theme插件的实现方式
+    orca.themes.injectCSSResource(`${pluginName}/dist/styles.css`, pluginName)
+    console.log(`${pluginName}: CSS样式文件注入成功`)
+  } catch (error) {
+    console.error(`${pluginName}: CSS样式文件注入失败:`, error)
+  }
+
   // 创建PageDisplay实例
   console.log("PageDisplay Plugin: 创建PageDisplay实例");
   pageDisplay = new PageDisplay(pluginName);
@@ -99,34 +108,6 @@ export async function load(_name: string) {
 
   // 设置插件设置模式
   await orca.plugins.setSettingsSchema(pluginName, {
-    showIcons: {
-      label: "显示图标",
-      description: "在页面空间显示项目中显示图标",
-      type: "boolean",
-      defaultValue: true
-    },
-    multiLine: {
-      label: "多行显示",
-      description: "项目文本以多行形式显示",
-      type: "boolean",
-      defaultValue: false
-    },
-    multiColumn: {
-      label: "多列显示",
-      description: "项目以多列形式显示",
-      type: "boolean",
-      defaultValue: false
-    },
-    displayMode: {
-      label: "显示模式",
-      description: "选择显示模式：平铺或分组",
-      type: "singleChoice",
-      defaultValue: "flat",
-      choices: [
-        { label: "平铺模式", value: "flat" },
-        { label: "分组模式", value: "grouped" }
-      ]
-    },
     journalPageSupport: {
       label: "Journal页面支持",
       description: "启用Journal页面的块ID识别和显示功能",
@@ -137,24 +118,18 @@ export async function load(_name: string) {
 
   // 监听设置变化
   const settingsUnsubscribe = subscribe(orca.state, () => {
-    if (pageDisplay && orca.state.settingsOpened) {
-      // 当设置面板打开时，同步设置到PageDisplay实例
+    if (pageDisplay) {
+      // 监听设置变化，立即同步到PageDisplay实例
       const settings = (orca.state.settings as any)[pluginName];
       if (settings) {
-        if (typeof settings.showIcons === 'boolean') {
-          pageDisplay.setIconsEnabled(settings.showIcons);
-        }
-        if (typeof settings.multiLine === 'boolean') {
-          pageDisplay.setMultiLine(settings.multiLine);
-        }
-        if (typeof settings.multiColumn === 'boolean') {
-          pageDisplay.setMultiColumn(settings.multiColumn);
-        }
-        if (typeof settings.displayMode === 'string') {
-          pageDisplay.setDisplayMode(settings.displayMode as 'flat' | 'grouped');
-        }
         if (typeof settings.journalPageSupport === 'boolean') {
-          pageDisplay.setJournalPageSupport(settings.journalPageSupport);
+          const currentValue = pageDisplay.getJournalPageSupport();
+          if (currentValue !== settings.journalPageSupport) {
+            console.log("PageDisplay: Journal page support setting changed:", settings.journalPageSupport);
+            pageDisplay.setJournalPageSupport(settings.journalPageSupport);
+            // 强制更新显示以应用新设置
+            pageDisplay.forceUpdate();
+          }
         }
       }
     }
@@ -166,6 +141,14 @@ export async function load(_name: string) {
 }
 
 export async function unload() {
+  // 移除CSS样式文件
+  try {
+    orca.themes.removeCSSResources(pluginName)
+    console.log(`${pluginName}: CSS样式文件移除成功`)
+  } catch (error) {
+    console.error(`${pluginName}: CSS样式文件移除失败:`, error)
+  }
+
   // 清理PageDisplay
   if (pageDisplay) {
     pageDisplay.destroy();

@@ -320,7 +320,8 @@ class StyleManager {
       'page-display-item-icon',
       'page-display-item-text',
       'page-display-highlight',
-      'page-display-query-list-toggle'
+      'page-display-query-list-toggle',
+      'page-display-query-list-hidden'
     ]
     
     styleClasses.forEach(cls => element.classList.remove(cls))
@@ -412,25 +413,10 @@ class StyleManager {
           justify-content: center;
           cursor: pointer;
           margin-left: 8px;
-          opacity: 0;
-          transition: all 0.2s ease;
           flex-shrink: 0;
           font-size: 14px;
           color: ${colors.textMuted};
         `
-        
-        // 添加悬停效果
-        element.addEventListener('mouseenter', () => {
-          element.style.opacity = '1'
-          element.style.background = colors.backgroundHover
-          element.style.color = colors.text
-        })
-        
-        element.addEventListener('mouseleave', () => {
-          element.style.opacity = '0'
-          element.style.background = colors.background
-          element.style.color = colors.textMuted
-        })
         break
         
       case 'page-display-filter-icon':
@@ -445,25 +431,10 @@ class StyleManager {
           justify-content: center;
           cursor: pointer;
           margin-left: 8px;
-          opacity: 0;
-          transition: all 0.2s ease;
           flex-shrink: 0;
           font-size: 14px;
           color: ${colors.textMuted};
         `
-        
-        // 添加悬停效果
-        element.addEventListener('mouseenter', () => {
-          element.style.opacity = '1'
-          element.style.background = colors.backgroundHover
-          element.style.color = colors.text
-        })
-        
-        element.addEventListener('mouseleave', () => {
-          element.style.opacity = '0'
-          element.style.background = colors.background
-          element.style.color = colors.textMuted
-        })
         break
         
       case 'page-display-icons-toggle-icon':
@@ -480,25 +451,10 @@ class StyleManager {
           justify-content: center;
           cursor: pointer;
           margin-left: 8px;
-          opacity: 0;
-          transition: all 0.2s ease;
           flex-shrink: 0;
           font-size: 14px;
           color: ${colors.textMuted};
         `
-        
-        // 添加悬停效果
-        element.addEventListener('mouseenter', () => {
-          element.style.opacity = '1'
-          element.style.background = colors.backgroundHover
-          element.style.color = colors.text
-        })
-        
-        element.addEventListener('mouseleave', () => {
-          element.style.opacity = '0'
-          element.style.background = colors.background
-          element.style.color = colors.textMuted
-        })
         break
         
       case 'page-display-search-container':
@@ -635,6 +591,7 @@ class StyleManager {
           element.style.color = colors.textMuted
         })
         break
+        
     }
   }
 
@@ -895,6 +852,8 @@ export class PageDisplay {
   private periodicCheckInterval: number | null = null
   /** 页面切换检查定时器 */
   private pageSwitchCheckInterval: number | null = null
+  /** DOM变化监听器，用于监听新出现的查询列表元素 */
+  private mutationObserver: MutationObserver | null = null
 
   // === 错误处理和重试属性 ===
   /** 当前重试次数 */
@@ -1022,13 +981,12 @@ export class PageDisplay {
    * @param enabled 是否启用Journal页面支持
    */
   public setJournalPageSupport(enabled: boolean): void {
+    console.log("PageDisplay: Setting journalPageSupport to:", enabled)
     this.journalPageSupport = enabled
     this.saveSettings()
     
-    // 如果禁用Journal页面支持，强制更新显示
-    if (!enabled) {
-      this.forceUpdate()
-    }
+    // 无论启用还是禁用，都强制更新显示以应用新设置
+    this.forceUpdate()
   }
 
   /**
@@ -1629,6 +1587,7 @@ const typeConfigs = [
         this.queryListHidden = parsedSettings.queryListHidden ?? false
         this.backrefAliasQueryEnabled = parsedSettings.backrefAliasQueryEnabled ?? true
         this.journalPageSupport = parsedSettings.journalPageSupport ?? true
+        console.log("PageDisplay: Loaded journalPageSupport setting:", this.journalPageSupport)
         const savedMode = parsedSettings.displayMode
         if (savedMode === 'flat' || savedMode === 'grouped') {
           this.displayMode = savedMode
@@ -1894,6 +1853,9 @@ const typeConfigs = [
       this.observer.disconnect()
       this.observer = null
     }
+    
+    // 断开查询列表观察器
+    this.stopQueryListObserver()
     
     // 清理防抖定时器
     if (this.updateTimeout) {
@@ -4996,16 +4958,27 @@ const typeConfigs = [
     const targetSelector = '.orca-block.orca-container.orca-block-postfix.orca-query-list-block-block'
     const targetBlocks = document.querySelectorAll(targetSelector)
     
-    // 批量处理，减少DOM操作
-    const displayValue = this.queryListHidden ? 'none' : ''
-    
+    // 批量处理，使用CSS类控制显示/隐藏
     targetBlocks.forEach((targetBlock) => {
       // 找到包含该目标块的查询列表块
       const queryBlock = targetBlock.closest('.orca-query-list-block')
       if (queryBlock) {
-        (queryBlock as HTMLElement).style.display = displayValue
+        if (this.queryListHidden) {
+          // 添加隐藏类
+          queryBlock.classList.add('page-display-query-list-hidden')
+        } else {
+          // 移除隐藏类
+          queryBlock.classList.remove('page-display-query-list-hidden')
+        }
       }
     })
+    
+    // 启动或停止MutationObserver
+    if (this.queryListHidden) {
+      this.startQueryListObserver()
+    } else {
+      this.stopQueryListObserver()
+    }
     
     // 更新按钮状态
     const panelId = this.getCurrentPanelId()
@@ -5023,6 +4996,65 @@ const typeConfigs = [
         }
       }
     }
+  }
+
+  // 启动查询列表观察器
+  private startQueryListObserver() {
+    if (this.mutationObserver) {
+      return // 已经启动
+    }
+    
+    this.mutationObserver = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList') {
+          // 检查新添加的节点
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node as Element
+              // 检查是否是查询列表相关的元素
+              if (element.classList.contains('orca-query-list-block') || 
+                  element.querySelector('.orca-query-list-block')) {
+                // 延迟应用隐藏类，确保DOM完全渲染
+                setTimeout(() => {
+                  this.applyHiddenClassToNewElements()
+                }, 100)
+              }
+            }
+          })
+        }
+      })
+    })
+    
+    // 开始观察整个文档的变化
+    this.mutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    })
+  }
+  
+  // 停止查询列表观察器
+  private stopQueryListObserver() {
+    if (this.mutationObserver) {
+      this.mutationObserver.disconnect()
+      this.mutationObserver = null
+    }
+  }
+  
+  // 对新出现的元素应用隐藏类
+  private applyHiddenClassToNewElements() {
+    if (!this.queryListHidden) {
+      return
+    }
+    
+    const targetSelector = '.orca-block.orca-container.orca-block-postfix.orca-query-list-block-block'
+    const targetBlocks = document.querySelectorAll(targetSelector)
+    
+    targetBlocks.forEach((targetBlock) => {
+      const queryBlock = targetBlock.closest('.orca-query-list-block')
+      if (queryBlock && !queryBlock.classList.contains('page-display-query-list-hidden')) {
+        queryBlock.classList.add('page-display-query-list-hidden')
+      }
+    })
   }
 
   /**
@@ -5096,6 +5128,18 @@ const typeConfigs = [
     this.applyStyles(pageCount, 'page-display-count')
     pageCount.textContent = '(0)'
     
+    // 创建功能按钮容器
+    const functionButtonsContainer = document.createElement('div')
+    functionButtonsContainer.className = 'page-display-function-buttons-container'
+    functionButtonsContainer.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 8px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    `
+    
     // 创建搜索图标
     const searchIcon = document.createElement('div')
     searchIcon.innerHTML = '<i class="ti ti-search"></i>'
@@ -5117,27 +5161,30 @@ const typeConfigs = [
     
     // 创建多行显示切换按钮
     const multiLineToggleIcon = document.createElement('div')
-    multiLineToggleIcon.innerHTML = this.multiLine ? '<i class="ti ti-layout-line"></i>' : '<i class="ti ti-layout-rows"></i>'
+    multiLineToggleIcon.innerHTML = '<i class="ti ti-layout-rows"></i>'
     multiLineToggleIcon.className = 'page-display-multiline-toggle-icon'
     this.applyStyles(multiLineToggleIcon, 'page-display-multiline-toggle-icon')
     multiLineToggleIcon.title = this.multiLine ? '单行显示' : '多行显示'
     
     // 创建多列显示切换按钮
     const multiColumnToggleIcon = document.createElement('div')
-    multiColumnToggleIcon.innerHTML = this.multiColumn ? '<i class="ti ti-layout-columns"></i>' : '<i class="ti ti-layout-grid"></i>'
+    multiColumnToggleIcon.innerHTML = '<i class="ti ti-layout-grid"></i>'
     multiColumnToggleIcon.className = 'page-display-multicolumn-toggle-icon'
     this.applyStyles(multiColumnToggleIcon, 'page-display-multicolumn-toggle-icon')
     multiColumnToggleIcon.title = this.multiColumn ? '单列显示' : '多列显示'
+    
+    // 将所有按钮添加到容器中
+    functionButtonsContainer.appendChild(searchIcon)
+    functionButtonsContainer.appendChild(filterIcon)
+    functionButtonsContainer.appendChild(iconsToggleIcon)
+    functionButtonsContainer.appendChild(multiLineToggleIcon)
+    functionButtonsContainer.appendChild(multiColumnToggleIcon)
     
     leftContent.appendChild(arrow)
     leftContent.appendChild(title)
     leftContent.appendChild(pageCount)
     titleContainer.appendChild(leftContent)
-    titleContainer.appendChild(searchIcon)
-    titleContainer.appendChild(filterIcon)
-    titleContainer.appendChild(iconsToggleIcon)
-    titleContainer.appendChild(multiLineToggleIcon)
-    titleContainer.appendChild(multiColumnToggleIcon)
+    titleContainer.appendChild(functionButtonsContainer)
     
     container.appendChild(titleContainer)
     
@@ -5158,28 +5205,9 @@ const typeConfigs = [
       arrow.style.opacity = '0'
     })
     
-    // 搜索图标悬浮效果
-    searchIcon.addEventListener('mouseenter', () => {
-      searchIcon.style.opacity = '1'
-      searchIcon.style.background = 'var(--page-display-search-bg-hover)'
-    })
+    // 搜索图标点击事件
     
-    searchIcon.addEventListener('mouseleave', () => {
-      // 鼠标移出搜索按钮时总是隐藏
-      searchIcon.style.opacity = '0'
-      searchIcon.style.background = 'var(--page-display-search-bg)'
-    })
-    
-    // 过滤图标悬浮效果和点击事件
-    filterIcon.addEventListener('mouseenter', () => {
-      filterIcon.style.opacity = '1'
-      filterIcon.style.background = 'var(--page-display-search-bg-hover)'
-    })
-    
-    filterIcon.addEventListener('mouseleave', () => {
-      filterIcon.style.opacity = '0'
-      filterIcon.style.background = 'var(--page-display-search-bg)'
-    })
+    // 过滤图标点击事件
     
     filterIcon.addEventListener('click', () => {
       this.toggleTypeFilters()
@@ -5204,33 +5232,11 @@ const typeConfigs = [
       }
     })
     
-    // 图标显示切换按钮悬浮效果
-    iconsToggleIcon.addEventListener('mouseenter', () => {
-      iconsToggleIcon.style.opacity = '1'
-      iconsToggleIcon.style.background = 'var(--page-display-search-bg-hover)'
-    })
-    
-    iconsToggleIcon.addEventListener('mouseleave', () => {
-      iconsToggleIcon.style.opacity = '0'
-      iconsToggleIcon.style.background = 'var(--page-display-search-bg)'
-    })
-    
     // 图标显示切换按钮事件
     iconsToggleIcon.addEventListener('click', () => {
       this.toggleIcons()
       iconsToggleIcon.title = this.showIcons ? '隐藏图标' : '显示图标'
       iconsToggleIcon.innerHTML = this.showIcons ? '<i class="ti ti-eye"></i>' : '<i class="ti ti-eye-off"></i>'
-    })
-    
-    // 多行显示切换按钮悬浮效果
-    multiLineToggleIcon.addEventListener('mouseenter', () => {
-      multiLineToggleIcon.style.opacity = '1'
-      multiLineToggleIcon.style.background = 'var(--page-display-search-bg-hover)'
-    })
-    
-    multiLineToggleIcon.addEventListener('mouseleave', () => {
-      multiLineToggleIcon.style.opacity = '0'
-      multiLineToggleIcon.style.background = 'var(--page-display-search-bg)'
     })
     
     // 多行显示切换按钮事件
@@ -5240,41 +5246,38 @@ const typeConfigs = [
       multiLineToggleIcon.innerHTML = this.multiLine ? '<i class="ti ti-layout-line"></i>' : '<i class="ti ti-layout-rows"></i>'
     })
     
-    // 多列显示切换按钮悬浮效果
-    multiColumnToggleIcon.addEventListener('mouseenter', () => {
-      multiColumnToggleIcon.style.opacity = '1'
-      multiColumnToggleIcon.style.background = 'var(--page-display-search-bg-hover)'
-    })
-    
-    multiColumnToggleIcon.addEventListener('mouseleave', () => {
-      multiColumnToggleIcon.style.opacity = '0'
-      multiColumnToggleIcon.style.background = 'var(--page-display-search-bg)'
-    })
-    
     // 多列显示切换按钮事件
     multiColumnToggleIcon.addEventListener('click', () => {
       this.toggleMultiColumn()
       multiColumnToggleIcon.title = this.multiColumn ? '单列显示' : '多列显示'
-      multiColumnToggleIcon.innerHTML = this.multiColumn ? '<i class="ti ti-layout-columns"></i>' : '<i class="ti ti-layout-grid"></i>'
     })
     
-    // 标题容器悬浮效果（只在右侧区域悬浮时显示搜索图标）
-    titleContainer.addEventListener('mouseenter', (e) => {
-      // 检查鼠标是否在右侧区域（搜索图标区域）
-      const rect = titleContainer.getBoundingClientRect()
-      const mouseX = e.clientX
-      const rightArea = rect.right - 40 // 右侧40px区域
-      
-      if (mouseX > rightArea) {
-        searchIcon.style.opacity = '1'
-        searchIcon.style.background = 'var(--page-display-search-bg-hover)'
-      }
+    // 标题容器的悬浮效果 - 显示/隐藏功能按钮
+    titleContainer.addEventListener('mouseenter', () => {
+      // 鼠标进入标题容器时显示功能按钮
+      functionButtonsContainer.style.opacity = '1'
     })
     
     titleContainer.addEventListener('mouseleave', () => {
-      // 鼠标移出标题容器时总是隐藏搜索图标
-      searchIcon.style.opacity = '0'
-      searchIcon.style.background = 'var(--page-display-search-bg)'
+      // 鼠标离开标题容器时隐藏功能按钮
+      functionButtonsContainer.style.opacity = '0'
+    })
+    
+    // 功能按钮容器的悬浮效果
+    functionButtonsContainer.addEventListener('mouseenter', () => {
+      // 鼠标进入功能按钮容器时，所有按钮都显示悬浮效果
+      const buttons = functionButtonsContainer.querySelectorAll('[class*="page-display-"]')
+      buttons.forEach(button => {
+        (button as HTMLElement).style.background = 'var(--page-display-search-bg-hover)'
+      })
+    })
+    
+    functionButtonsContainer.addEventListener('mouseleave', () => {
+      // 鼠标离开功能按钮容器时，恢复所有按钮的默认样式
+      const buttons = functionButtonsContainer.querySelectorAll('[class*="page-display-"]')
+      buttons.forEach(button => {
+        (button as HTMLElement).style.background = 'var(--page-display-search-bg)'
+      })
     })
     
     // 折叠/展开功能
@@ -5353,14 +5356,12 @@ const typeConfigs = [
         searchContainer.offsetHeight // Trigger reflow
         searchContainer.style.opacity = '1'
         searchContainer.style.maxHeight = '100px'
-        searchIcon.style.opacity = '1'
         searchIcon.style.background = 'var(--page-display-search-bg-hover)'
         searchInput.focus()
       } else {
         // 隐藏搜索框 - 使用流畅的过渡效果
         searchContainer.style.opacity = '0'
         searchContainer.style.maxHeight = '0'
-        searchIcon.style.opacity = '0'
         searchIcon.style.background = 'var(--page-display-search-bg)'
         
         // 延迟后完全隐藏，避免卡顿
