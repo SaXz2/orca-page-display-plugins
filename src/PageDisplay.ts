@@ -822,6 +822,8 @@ export class PageDisplay {
   private showIcons: boolean = true
   /** 控制每个页面的折叠状态，key为页面ID，默认展开 */
   private pageCollapseStates: Map<DbId, boolean> = new Map()
+  /** 控制默认折叠状态，新页面默认是否折叠 */
+  private defaultCollapsed: boolean = true
   /** 控制是否多行显示项目文本 */
   private multiLine: boolean = false
   /** 控制是否多列显示项目 */
@@ -1595,7 +1597,9 @@ const typeConfigs = [
         this.queryListHidden = parsedSettings.queryListHidden ?? false
         this.backrefAliasQueryEnabled = parsedSettings.backrefAliasQueryEnabled ?? true
         this.journalPageSupport = parsedSettings.journalPageSupport ?? true
+        this.defaultCollapsed = parsedSettings.defaultCollapsed ?? true
         console.log("PageDisplay: Loaded journalPageSupport setting:", this.journalPageSupport)
+        console.log("PageDisplay: Loaded defaultCollapsed setting:", this.defaultCollapsed)
         const savedMode = parsedSettings.displayMode
         if (savedMode === 'flat' || savedMode === 'grouped') {
           this.displayMode = savedMode
@@ -1632,6 +1636,7 @@ const typeConfigs = [
         queryListHidden: this.queryListHidden,
         backrefAliasQueryEnabled: this.backrefAliasQueryEnabled,
         journalPageSupport: this.journalPageSupport,
+        defaultCollapsed: this.defaultCollapsed,
         // 保存类型过滤设置
         typeFilters: Object.fromEntries(this.typeFilters),
         showTypeFilters: this.showTypeFilters,
@@ -2186,12 +2191,19 @@ const typeConfigs = [
 
   /**
    * 获取当前页面的折叠状态
-   * @returns 当前页面是否处于折叠状态，默认为false（展开）
+   * @returns 当前页面是否处于折叠状态，如果页面没有保存状态则使用默认折叠设置
    */
   private getCurrentPageCollapseState(): boolean {
     const rootBlockId = this.getCurrentRootBlockId()
-    if (!rootBlockId) return false
-    return this.pageCollapseStates.get(rootBlockId) || false
+    if (!rootBlockId) return this.defaultCollapsed
+    
+    // 如果页面有保存的折叠状态，使用保存的状态
+    if (this.pageCollapseStates.has(rootBlockId)) {
+      return this.pageCollapseStates.get(rootBlockId)!
+    }
+    
+    // 如果页面没有保存的折叠状态，使用默认折叠设置
+    return this.defaultCollapsed
   }
 
   /**
@@ -2204,6 +2216,57 @@ const typeConfigs = [
       this.pageCollapseStates.set(rootBlockId, collapsed)
       // 保存设置到本地存储
       this.saveSettings()
+    }
+  }
+
+  /**
+   * 获取默认折叠状态
+   * @returns 是否默认折叠
+   */
+  public getDefaultCollapsed(): boolean {
+    return this.defaultCollapsed
+  }
+
+  /**
+   * 设置默认折叠状态
+   * @param collapsed 是否默认折叠
+   */
+  public setDefaultCollapsed(collapsed: boolean): void {
+    this.defaultCollapsed = collapsed
+    this.saveSettings()
+    this.log(`PageDisplay: 默认折叠状态已设置为: ${collapsed ? '折叠' : '展开'}`)
+  }
+
+  /**
+   * 切换默认折叠状态
+   */
+  public toggleDefaultCollapsed(): void {
+    this.setDefaultCollapsed(!this.defaultCollapsed)
+    const status = this.defaultCollapsed ? "折叠" : "展开"
+    orca.notify("info", `新页面默认状态已设置为${status}`)
+  }
+
+  /**
+   * 获取当前页面的折叠状态信息（调试用）
+   */
+  public getCurrentPageCollapseInfo(): {
+    rootBlockId: DbId | null
+    hasSavedState: boolean
+    savedState: boolean | null
+    defaultCollapsed: boolean
+    finalState: boolean
+  } {
+    const rootBlockId = this.getCurrentRootBlockId()
+    const hasSavedState = rootBlockId ? this.pageCollapseStates.has(rootBlockId) : false
+    const savedState = rootBlockId ? (this.pageCollapseStates.get(rootBlockId) ?? null) : null
+    const finalState = this.getCurrentPageCollapseState()
+    
+    return {
+      rootBlockId,
+      hasSavedState,
+      savedState,
+      defaultCollapsed: this.defaultCollapsed,
+      finalState
     }
   }
 
@@ -3825,10 +3888,82 @@ const typeConfigs = [
     return ''
   }
 
+  /**
+   * 检查项目类型是否需要递归子内容搜索
+   * 这些类型的别名块在搜索时需要包含其子块的内容
+   */
+  private shouldIncludeChildrenInSearch(itemType: PageDisplayItemType): boolean {
+    const aliasTypesWithChildrenSearch: PageDisplayItemType[] = [
+      'referenced-tag',           // 被引用的标签块
+      'contained-in',             // 包含于父块
+      'child-referenced-tag-alias', // 包含于子标签
+      'inline-ref',               // 内联引用
+      'property-ref-alias',       // 别名属性引用
+      'page-direct-children',     // 页面内联别名块
+      'tag',                      // 页面标签
+      'child-referenced-inline',  // 页面内联块引用
+      'recursive-backref-alias',  // 递归直接反链别名块属性
+      'backref-alias-blocks',     // 直接反链别名
+      'child-referenced-alias',   // 递归反链别名
+      'referencing-alias'         // 引用别名
+    ]
+    
+    return aliasTypesWithChildrenSearch.includes(itemType)
+  }
+
+  /**
+   * 递归获取块的所有子块内容（用于搜索）
+   * @param blockId 块ID
+   * @returns 所有子块的文本内容
+   */
+  private async getChildrenTextForSearch(blockId: DbId): Promise<string[]> {
+    const texts: string[] = []
+    
+    try {
+      // 获取当前块
+      const block = await this.cachedApiCall("get-block", blockId)
+      if (!block || !block.children || block.children.length === 0) {
+        return texts
+      }
+      
+      // 获取所有子块
+      const childBlocks = await this.cachedApiCall("get-blocks", block.children)
+      if (!childBlocks || !Array.isArray(childBlocks)) {
+        return texts
+      }
+      
+      // 遍历子块
+      for (const child of childBlocks) {
+        // 添加子块文本
+        if (child.text) {
+          texts.push(child.text)
+        }
+        
+        // 添加子块别名
+        if (child.aliases && child.aliases.length > 0) {
+          texts.push(...child.aliases)
+        }
+        
+        // 递归获取子块的子块内容
+        if (child.children && child.children.length > 0) {
+          const grandchildTexts = await this.getChildrenTextForSearch(child.id)
+          texts.push(...grandchildTexts)
+        }
+      }
+      
+      this.log(`🔍 块 ${blockId} 递归获取到 ${texts.length} 个子内容`)
+    } catch (error) {
+      this.logError(`获取块 ${blockId} 子内容失败:`, error)
+    }
+    
+    return texts
+  }
+
   // 直接使用 block.refs 解析搜索数据
   /**
    * 增强项目搜索数据
    * 为项目添加可搜索的文本数据，包括块内容、属性、引用等
+   * 对于特殊别名块类型，会递归包含子块内容
    * @param item 要增强的项目
    * @param block 对应的块数据
    * @returns 增强后的项目
@@ -3837,7 +3972,18 @@ const typeConfigs = [
     // 收集所有可搜索的文本
     const searchableTexts = [item.text, ...item.aliases]
     
-    this.log(`🔍 开始解析块 ${block.id} 的搜索数据`)
+    this.log(`🔍 开始解析块 ${block.id} 的搜索数据，类型: ${item.itemType}`)
+    
+    // 检查是否需要递归子内容搜索
+    const needChildrenSearch = this.shouldIncludeChildrenInSearch(item.itemType)
+    if (needChildrenSearch) {
+      this.log(`🔍 块 ${block.id} 类型 ${item.itemType} 需要递归子内容搜索`)
+      const childrenTexts = await this.getChildrenTextForSearch(block.id)
+      if (childrenTexts.length > 0) {
+        searchableTexts.push(...childrenTexts)
+        this.log(`🔍 块 ${block.id} 添加了 ${childrenTexts.length} 个子内容到搜索文本`)
+      }
+    }
     
     try {
       // 直接使用 block.refs 获取引用信息
