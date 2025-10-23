@@ -12,6 +12,29 @@ interface ChildBlockInfo {
 }
 
 /**
+ * 日期过滤配置接口
+ */
+interface DateFilterConfig {
+  enabled: boolean
+  startDate?: Date
+  endDate?: Date
+  relativeDate?: 'today' | 'yesterday' | 'last7days' | 'last30days' | 'last90days' | 'thisYear'
+  dateField: 'created' | 'modified' // 按创建日期还是修改日期过滤
+}
+
+/**
+ * 面板状态接口
+ */
+interface PanelState {
+  searchText: string
+  isExpanded: boolean
+  isSearchVisible: boolean
+  typeFilters: Record<string, boolean>
+  dateFilter: DateFilterConfig
+  scrollTop: number
+}
+
+/**
  * 错误处理器类
  * 负责统一处理各种错误情况，包括重试逻辑和用户通知
  */
@@ -769,6 +792,10 @@ interface PageDisplayItem {
   _icon?: string
   /** 项目类型 */
   itemType: PageDisplayItemType
+  /** 创建时间 */
+  created?: number
+  /** 修改时间 */
+  modified?: number
   /** 搜索相关字段 */
   /** 包含所有可搜索文本的字符串 */
   searchableText?: string
@@ -938,6 +965,15 @@ export class PageDisplay {
   /** 类型过滤状态，key为类型，value为是否显示 */
   private typeFilters: Map<PageDisplayItemType, boolean> = new Map()
   
+  // === 日期过滤控制属性 ===
+  /** 控制日期过滤面板是否显示 */
+  private showDateFilters: boolean = false
+  /** 日期过滤配置 */
+  private dateFilterConfig: DateFilterConfig = {
+    enabled: false,
+    dateField: 'created'
+  }
+  
   // === 缓存相关属性已移至ApiService ===
 
   /**
@@ -1032,6 +1068,10 @@ export class PageDisplay {
         isExpanded: !this.defaultCollapsed,
         isSearchVisible: false,
         typeFilters: {},
+        dateFilter: {
+          enabled: false,
+          dateField: 'created'
+        },
         scrollTop: 0
       })
     }
@@ -1395,6 +1435,132 @@ export class PageDisplay {
     return new Map(this.typeFilters)
   }
 
+  // === 日期过滤相关方法 ===
+  
+  /**
+   * 切换日期过滤面板显示状态
+   */
+  public toggleDateFilters(): void {
+    this.showDateFilters = !this.showDateFilters
+    this.saveSettings()
+    
+    // 如果当前面板有显示，重新创建以应用新的过滤面板设置
+    const panelId = this.getCurrentPanelId()
+    const container = this.containers.get(panelId)
+    if (container) {
+      this.updateDisplay()
+    }
+  }
+
+  /**
+   * 获取日期过滤面板显示状态
+   * @returns 是否显示日期过滤面板
+   */
+  public getDateFiltersVisible(): boolean {
+    return this.showDateFilters
+  }
+
+  /**
+   * 设置日期过滤配置
+   * @param config 日期过滤配置
+   */
+  public setDateFilterConfig(config: DateFilterConfig): void {
+    this.dateFilterConfig = config
+    this.saveSettings()
+  }
+
+  /**
+   * 获取日期过滤配置
+   * @returns 日期过滤配置
+   */
+  public getDateFilterConfig(): DateFilterConfig {
+    return this.dateFilterConfig
+  }
+
+  /**
+   * 应用日期过滤
+   * @param items 要过滤的项目列表
+   * @returns 过滤后的项目列表
+   */
+  private applyDateFilter(items: PageDisplayItem[]): PageDisplayItem[] {
+    if (!this.dateFilterConfig.enabled) {
+      return items
+    }
+
+    const now = new Date()
+    let startDate: Date | null = null
+    let endDate: Date | null = null
+
+    // 处理相对日期
+    if (this.dateFilterConfig.relativeDate) {
+      switch (this.dateFilterConfig.relativeDate) {
+        case 'today':
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+          endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+          break
+        case 'yesterday':
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+          endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+          break
+        case 'last7days':
+          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+          endDate = now
+          break
+        case 'last30days':
+          startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+          endDate = now
+          break
+        case 'last90days':
+          startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+          endDate = now
+          break
+        case 'thisYear':
+          startDate = new Date(now.getFullYear(), 0, 1)
+          endDate = new Date(now.getFullYear() + 1, 0, 1)
+          break
+      }
+    } else {
+      // 使用绝对日期
+      startDate = this.dateFilterConfig.startDate || null
+      endDate = this.dateFilterConfig.endDate || null
+    }
+
+    if (!startDate && !endDate) {
+      return items
+    }
+
+    return items.filter(item => {
+      // 获取项目的日期（创建或修改日期）
+      const itemDate = this.getItemDate(item)
+      if (!itemDate) {
+        return false
+      }
+
+      // 检查日期范围
+      if (startDate && itemDate < startDate) {
+        return false
+      }
+      if (endDate && itemDate >= endDate) {
+        return false
+      }
+
+      return true
+    })
+  }
+
+  /**
+   * 获取项目的日期
+   * @param item 项目
+   * @returns 项目日期
+   */
+  private getItemDate(item: PageDisplayItem): Date | null {
+    if (this.dateFilterConfig.dateField === 'created') {
+      return item.created ? new Date(item.created) : null
+    } else {
+      return item.modified ? new Date(item.modified) : null
+    }
+  }
+
   /**
    * 创建类型过滤控制面板
    * @returns 类型过滤面板元素
@@ -1724,6 +1890,407 @@ const typeConfigs = [
       input.checked = this.getTypeFilter(type)
     })
   }
+
+  /**
+   * 创建日期过滤控制面板
+   * @returns 日期过滤面板元素
+   */
+  private createDateFilterPanel(): HTMLElement {
+    const panel = document.createElement('div')
+    panel.className = 'page-display-date-filter-panel'
+    this.applyStyles(panel, 'page-display-date-filter-panel')
+    
+    // 设置初始显示状态和透明度过渡
+    panel.style.cssText = `
+      display: ${this.showDateFilters ? 'block' : 'none'};
+      opacity: ${this.showDateFilters ? '1' : '0'};
+      visibility: ${this.showDateFilters ? 'visible' : 'hidden'};
+      transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+      transform: translateY(${this.showDateFilters ? '0' : '-10px'});
+    `
+    
+    // 创建面板标题和按钮容器
+    const titleContainer = document.createElement('div')
+    titleContainer.className = 'page-display-date-filter-title-container'
+    this.applyStyles(titleContainer, 'page-display-date-filter-title-container')
+    
+    // 设置flex布局，标题在左，按钮在右
+    titleContainer.style.cssText = `
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      padding: 8px;
+    `
+    
+    // 创建标题
+    const title = document.createElement('div')
+    title.className = 'page-display-date-filter-title'
+    title.textContent = '日期过滤'
+    this.applyStyles(title, 'page-display-date-filter-title')
+    
+    // 创建标题右侧的按钮
+    const titleButtons = document.createElement('div')
+    titleButtons.className = 'page-display-date-filter-title-buttons'
+    this.applyStyles(titleButtons, 'page-display-date-filter-title-buttons')
+    
+    // 设置按钮水平排列
+    titleButtons.style.cssText = `
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    `
+    
+    const clearBtn = document.createElement('button')
+    clearBtn.textContent = '清除'
+    clearBtn.className = 'page-display-date-filter-clear-btn'
+    
+    // 设置按钮样式
+    clearBtn.style.cssText = `
+      padding: 3px 6px;
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.2s;
+    `
+    
+    // 添加悬浮效果
+    clearBtn.addEventListener('mouseenter', () => {
+      clearBtn.style.background = 'rgba(255, 255, 255, 0.2)'
+    })
+    clearBtn.addEventListener('mouseleave', () => {
+      clearBtn.style.background = 'rgba(255, 255, 255, 0.1)'
+    })
+    clearBtn.addEventListener('click', () => {
+      // 清除所有日期过滤设置
+      this.dateFilterConfig = {
+        enabled: false,
+        dateField: 'created'
+      }
+      this.saveSettings()
+      this.forceUpdate()
+      this.toggleDateFilters()
+    })
+    
+    const confirmBtn = document.createElement('button')
+    confirmBtn.textContent = '确认'
+    confirmBtn.className = 'page-display-date-filter-confirm-btn'
+    
+    // 设置确认按钮样式（绿色主题）
+    confirmBtn.style.cssText = `
+      padding: 3px 6px;
+      font-size: 11px;
+      background: rgba(34, 197, 94, 0.2);
+      color: white;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.2s;
+    `
+    
+    confirmBtn.addEventListener('mouseenter', () => {
+      confirmBtn.style.background = 'rgba(34, 197, 94, 0.3)'
+    })
+    confirmBtn.addEventListener('mouseleave', () => {
+      confirmBtn.style.background = 'rgba(34, 197, 94, 0.2)'
+    })
+    confirmBtn.addEventListener('click', () => {
+      // 应用日期过滤设置
+      this.forceUpdate()
+      this.toggleDateFilters()
+    })
+    
+    const cancelBtn = document.createElement('button')
+    cancelBtn.textContent = '取消'
+    cancelBtn.className = 'page-display-date-filter-cancel-btn'
+    
+    // 设置取消按钮样式（红色主题）
+    cancelBtn.style.cssText = `
+      padding: 3px 6px;
+      font-size: 11px;
+      background: rgba(239, 68, 68, 0.2);
+      color: white;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.2s;
+    `
+    
+    cancelBtn.addEventListener('mouseenter', () => {
+      cancelBtn.style.background = 'rgba(239, 68, 68, 0.3)'
+    })
+    cancelBtn.addEventListener('mouseleave', () => {
+      cancelBtn.style.background = 'rgba(239, 68, 68, 0.2)'
+    })
+    cancelBtn.addEventListener('click', () => {
+      // 隐藏面板
+      this.toggleDateFilters()
+    })
+    
+    titleButtons.appendChild(clearBtn)
+    titleButtons.appendChild(confirmBtn)
+    titleButtons.appendChild(cancelBtn)
+    
+    titleContainer.appendChild(title)
+    titleContainer.appendChild(titleButtons)
+    
+    // 创建日期过滤选项容器
+    const optionsContainer = document.createElement('div')
+    optionsContainer.className = 'page-display-date-filter-options'
+    
+    // 设置样式
+    optionsContainer.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 10px;
+      padding: 8px;
+    `
+    
+    // 启用日期过滤复选框
+    const enableContainer = document.createElement('div')
+    enableContainer.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+    `
+    
+    const enableCheckbox = document.createElement('input')
+    enableCheckbox.type = 'checkbox'
+    enableCheckbox.id = 'date-filter-enable'
+    enableCheckbox.checked = this.dateFilterConfig.enabled
+    enableCheckbox.style.cssText = `
+      margin: 0;
+      cursor: pointer;
+    `
+    
+    const enableLabel = document.createElement('label')
+    enableLabel.htmlFor = 'date-filter-enable'
+    enableLabel.textContent = '启用日期过滤'
+    enableLabel.style.cssText = `
+      cursor: pointer;
+      font-size: 12px;
+      color: white;
+      user-select: none;
+    `
+    
+    enableContainer.appendChild(enableCheckbox)
+    enableContainer.appendChild(enableLabel)
+    
+    // 日期字段选择
+    const dateFieldContainer = document.createElement('div')
+    dateFieldContainer.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+    `
+    
+    const dateFieldLabel = document.createElement('label')
+    dateFieldLabel.textContent = '按日期字段:'
+    dateFieldLabel.style.cssText = `
+      font-size: 12px;
+      color: white;
+      user-select: none;
+    `
+    
+    const dateFieldSelect = document.createElement('select')
+    dateFieldSelect.id = 'date-filter-field'
+    dateFieldSelect.value = this.dateFilterConfig.dateField
+    dateFieldSelect.style.cssText = `
+      padding: 4px 8px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+      cursor: pointer;
+    `
+    
+    const createdOption = document.createElement('option')
+    createdOption.value = 'created'
+    createdOption.textContent = '创建日期'
+    
+    const modifiedOption = document.createElement('option')
+    modifiedOption.value = 'modified'
+    modifiedOption.textContent = '修改日期'
+    
+    dateFieldSelect.appendChild(createdOption)
+    dateFieldSelect.appendChild(modifiedOption)
+    
+    dateFieldContainer.appendChild(dateFieldLabel)
+    dateFieldContainer.appendChild(dateFieldSelect)
+    
+    // 相对日期选择
+    const relativeDateContainer = document.createElement('div')
+    relativeDateContainer.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+    `
+    
+    const relativeDateLabel = document.createElement('label')
+    relativeDateLabel.textContent = '相对日期:'
+    relativeDateLabel.style.cssText = `
+      font-size: 12px;
+      color: white;
+      user-select: none;
+    `
+    
+    const relativeDateSelect = document.createElement('select')
+    relativeDateSelect.id = 'date-filter-relative'
+    relativeDateSelect.value = this.dateFilterConfig.relativeDate || ''
+    relativeDateSelect.style.cssText = `
+      padding: 4px 8px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+      cursor: pointer;
+    `
+    
+    const relativeOptions = [
+      { value: '', text: '无' },
+      { value: 'today', text: '今天' },
+      { value: 'yesterday', text: '昨天' },
+      { value: 'last7days', text: '最近7天' },
+      { value: 'last30days', text: '最近30天' },
+      { value: 'last90days', text: '最近90天' },
+      { value: 'thisYear', text: '今年' }
+    ]
+    
+    relativeOptions.forEach(option => {
+      const optionElement = document.createElement('option')
+      optionElement.value = option.value
+      optionElement.textContent = option.text
+      relativeDateSelect.appendChild(optionElement)
+    })
+    
+    relativeDateContainer.appendChild(relativeDateLabel)
+    relativeDateContainer.appendChild(relativeDateSelect)
+    
+    // 绝对日期选择
+    const absoluteDateContainer = document.createElement('div')
+    absoluteDateContainer.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 4px;
+    `
+    
+    const absoluteDateLabel = document.createElement('div')
+    absoluteDateLabel.textContent = '绝对日期范围:'
+    absoluteDateLabel.style.cssText = `
+      font-size: 12px;
+      color: white;
+      user-select: none;
+    `
+    
+    const dateRangeContainer = document.createElement('div')
+    dateRangeContainer.style.cssText = `
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    `
+    
+    const startDateInput = document.createElement('input')
+    startDateInput.type = 'date'
+    startDateInput.id = 'date-filter-start'
+    startDateInput.value = this.dateFilterConfig.startDate ? this.dateFilterConfig.startDate.toISOString().split('T')[0] : ''
+    startDateInput.style.cssText = `
+      padding: 4px 8px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+      cursor: pointer;
+    `
+    
+    const endDateInput = document.createElement('input')
+    endDateInput.type = 'date'
+    endDateInput.id = 'date-filter-end'
+    endDateInput.value = this.dateFilterConfig.endDate ? this.dateFilterConfig.endDate.toISOString().split('T')[0] : ''
+    endDateInput.style.cssText = `
+      padding: 4px 8px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+      cursor: pointer;
+    `
+    
+    const startLabel = document.createElement('label')
+    startLabel.textContent = '开始:'
+    startLabel.style.cssText = `
+      font-size: 11px;
+      color: white;
+      user-select: none;
+    `
+    
+    const endLabel = document.createElement('label')
+    endLabel.textContent = '结束:'
+    endLabel.style.cssText = `
+      font-size: 11px;
+      color: white;
+      user-select: none;
+    `
+    
+    dateRangeContainer.appendChild(startLabel)
+    dateRangeContainer.appendChild(startDateInput)
+    dateRangeContainer.appendChild(endLabel)
+    dateRangeContainer.appendChild(endDateInput)
+    
+    absoluteDateContainer.appendChild(absoluteDateLabel)
+    absoluteDateContainer.appendChild(dateRangeContainer)
+    
+    // 添加事件监听器
+    enableCheckbox.addEventListener('change', () => {
+      this.dateFilterConfig.enabled = enableCheckbox.checked
+    })
+    
+    dateFieldSelect.addEventListener('change', () => {
+      this.dateFilterConfig.dateField = dateFieldSelect.value as 'created' | 'modified'
+    })
+    
+    relativeDateSelect.addEventListener('change', () => {
+      this.dateFilterConfig.relativeDate = relativeDateSelect.value as any || undefined
+    })
+    
+    startDateInput.addEventListener('change', () => {
+      this.dateFilterConfig.startDate = startDateInput.value ? new Date(startDateInput.value) : undefined
+    })
+    
+    endDateInput.addEventListener('change', () => {
+      this.dateFilterConfig.endDate = endDateInput.value ? new Date(endDateInput.value) : undefined
+    })
+    
+    // 组装面板
+    optionsContainer.appendChild(enableContainer)
+    optionsContainer.appendChild(dateFieldContainer)
+    optionsContainer.appendChild(relativeDateContainer)
+    optionsContainer.appendChild(absoluteDateContainer)
+    
+    panel.appendChild(titleContainer)
+    panel.appendChild(optionsContainer)
+    
+    return panel
+  }
   
   /**
    * 获取当前面板标识
@@ -1770,6 +2337,18 @@ const typeConfigs = [
         }
         this.showTypeFilters = parsedSettings.showTypeFilters ?? false
         
+        // 加载日期过滤设置
+        if (parsedSettings.dateFilterConfig) {
+          this.dateFilterConfig = {
+            enabled: parsedSettings.dateFilterConfig.enabled ?? false,
+            startDate: parsedSettings.dateFilterConfig.startDate ? new Date(parsedSettings.dateFilterConfig.startDate) : undefined,
+            endDate: parsedSettings.dateFilterConfig.endDate ? new Date(parsedSettings.dateFilterConfig.endDate) : undefined,
+            relativeDate: parsedSettings.dateFilterConfig.relativeDate,
+            dateField: parsedSettings.dateFilterConfig.dateField ?? 'created'
+          }
+        }
+        this.showDateFilters = parsedSettings.showDateFilters ?? false
+        
         // 加载页面折叠状态
         if (parsedSettings.pageCollapseStates) {
           this.pageCollapseStates = new Map(
@@ -1798,6 +2377,15 @@ const typeConfigs = [
         // 保存类型过滤设置
         typeFilters: Object.fromEntries(this.typeFilters),
         showTypeFilters: this.showTypeFilters,
+        // 保存日期过滤设置
+        dateFilterConfig: {
+          enabled: this.dateFilterConfig.enabled,
+          startDate: this.dateFilterConfig.startDate?.toISOString(),
+          endDate: this.dateFilterConfig.endDate?.toISOString(),
+          relativeDate: this.dateFilterConfig.relativeDate,
+          dateField: this.dateFilterConfig.dateField
+        },
+        showDateFilters: this.showDateFilters,
         // 保存页面折叠状态
         pageCollapseStates: Object.fromEntries(this.pageCollapseStates)
       }
@@ -3881,7 +4469,9 @@ const typeConfigs = [
       parentBlock: this.getParentBlock(block),
       _hide: (block as any)._hide,
       _icon: (block as any)._icon,
-      itemType: itemType
+      itemType: itemType,
+      created: (block as any).created,
+      modified: (block as any).modified
     }
     
     return await this.enhanceItemForSearch(baseItem, block)
@@ -5830,6 +6420,12 @@ const typeConfigs = [
     filterIcon.className = 'page-display-filter-icon'
     this.applyStyles(filterIcon, 'page-display-filter-icon')
     
+    // 创建日期过滤图标
+    const dateFilterIcon = document.createElement('div')
+    dateFilterIcon.innerHTML = '<i class="ti ti-calendar"></i>'
+    dateFilterIcon.className = 'page-display-date-filter-icon'
+    this.applyStyles(dateFilterIcon, 'page-display-date-filter-icon')
+    
     // 创建图标显示切换按钮
     const iconsToggleIcon = document.createElement('div')
     iconsToggleIcon.innerHTML = this.showIcons ? '<i class="ti ti-eye"></i>' : '<i class="ti ti-eye-off"></i>'
@@ -5854,6 +6450,7 @@ const typeConfigs = [
     // 将所有按钮添加到容器中
     functionButtonsContainer.appendChild(searchIcon)
     functionButtonsContainer.appendChild(filterIcon)
+    functionButtonsContainer.appendChild(dateFilterIcon)
     functionButtonsContainer.appendChild(iconsToggleIcon)
     functionButtonsContainer.appendChild(multiLineToggleIcon)
     functionButtonsContainer.appendChild(multiColumnToggleIcon)
@@ -5869,6 +6466,10 @@ const typeConfigs = [
     // 创建类型过滤控制面板
     const typeFilterPanel = this.createTypeFilterPanel()
     container.appendChild(typeFilterPanel)
+    
+    // 创建日期过滤控制面板
+    const dateFilterPanel = this.createDateFilterPanel()
+    container.appendChild(dateFilterPanel)
     
     // 折叠状态和搜索状态
     let isTransitioning = false
@@ -5915,6 +6516,36 @@ const typeConfigs = [
         typeFilterPanel.style.opacity = '0'
         typeFilterPanel.style.visibility = 'hidden'
         typeFilterPanel.style.transform = 'translateY(-10px)'
+      }
+    })
+    
+    // 日期过滤图标点击事件
+    dateFilterIcon.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // 添加点击反馈
+      dateFilterIcon.style.transform = 'scale(0.95)'
+      setTimeout(() => {
+        dateFilterIcon.style.transform = 'scale(1)'
+      }, 100)
+      
+      this.toggleDateFilters()
+      
+      if (this.showDateFilters) {
+        // 显示面板 - 使用透明度过渡
+        dateFilterPanel.style.display = 'block'
+        // 强制重排以确保初始状态正确
+        dateFilterPanel.offsetHeight
+        dateFilterPanel.style.opacity = '1'
+        dateFilterPanel.style.visibility = 'visible'
+        dateFilterPanel.style.transform = 'translateY(0)'
+      } else {
+        // 隐藏面板 - 立即设置display为none，避免空白区域
+        dateFilterPanel.style.display = 'none'
+        dateFilterPanel.style.opacity = '0'
+        dateFilterPanel.style.visibility = 'hidden'
+        dateFilterPanel.style.transform = 'translateY(-10px)'
       }
     })
     
@@ -6184,7 +6815,7 @@ const typeConfigs = [
       this.currentBatch = 0
       
       // 应用类型过滤
-      const beforeFilterCount = filteredItems.length
+      const beforeTypeFilterCount = filteredItems.length
       filteredItems = filteredItems.filter(item => {
         const isVisible = this.getTypeFilter(item.itemType)
         if (!isVisible) {
@@ -6192,7 +6823,12 @@ const typeConfigs = [
         }
         return isVisible
       })
-      this.log(`PageDisplay: 过滤前: ${beforeFilterCount} 项, 过滤后: ${filteredItems.length} 项`)
+      this.log(`PageDisplay: 类型过滤前: ${beforeTypeFilterCount} 项, 类型过滤后: ${filteredItems.length} 项`)
+      
+      // 应用日期过滤
+      const beforeDateFilterCount = filteredItems.length
+      filteredItems = this.applyDateFilter(filteredItems)
+      this.log(`PageDisplay: 日期过滤前: ${beforeDateFilterCount} 项, 日期过滤后: ${filteredItems.length} 项`)
       
       // 对过滤后的项目进行置顶排序：包含于块(非子标签)置顶显示
       filteredItems = filteredItems.sort((a, b) => {
