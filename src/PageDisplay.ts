@@ -726,7 +726,7 @@ class StyleManager {
 /**
  * 页面显示项目类型
  */
-type PageDisplayItemType = 'tag' | 'referenced' | 'inline-ref' | 'property-ref' | 'referencing-alias' | 'child-referenced-alias' | 'backref-alias-blocks' | 'backref' | 'recursive-backref' | 'recursive-backref-alias'
+type PageDisplayItemType = 'tag' | 'referenced' | 'contained-in' | 'inline-ref' | 'property-ref' | 'referencing-alias' | 'child-referenced-alias' | 'backref-alias-blocks' | 'backref' | 'recursive-backref' | 'recursive-backref-alias'
 
 type DisplayMode = 'flat' | 'grouped'
 type DisplayGroupsMap = Record<PageDisplayItemType, PageDisplayItem[]>
@@ -1120,7 +1120,7 @@ export class PageDisplay {
    */
   private initializeTypeFilters(): void {
     const allTypes: PageDisplayItemType[] = [
-      'tag', 'referenced', 'inline-ref', 'property-ref', 'referencing-alias', 'child-referenced-alias', 
+      'tag', 'referenced', 'contained-in', 'inline-ref', 'property-ref', 'referencing-alias', 'child-referenced-alias', 
       'backref-alias-blocks', 'backref', 'recursive-backref', 'recursive-backref-alias'
     ]
     
@@ -1407,6 +1407,7 @@ export class PageDisplay {
     const typeConfigs = [
       { type: 'tag', label: '包含于子标签', icon: 'ti-hash' },
       { type: 'referenced', label: '被引用', icon: 'ti-arrow-up' },
+      { type: 'contained-in', label: '包含于块', icon: 'ti-arrow-up' },
       { type: 'inline-ref', label: '内联引用', icon: 'ti-link' },
       { type: 'property-ref', label: '属性引用', icon: 'ti-align-box-center-stretch' },
       { type: 'referencing-alias', label: '直接引用别名', icon: 'ti-arrow-right' },
@@ -1671,6 +1672,7 @@ export class PageDisplay {
     return {
       tag: [],
       referenced: [],
+      'contained-in': [],
       'inline-ref': [],
       'property-ref': [],
       'referencing-alias': [],
@@ -1691,7 +1693,7 @@ export class PageDisplay {
     const result = this.createEmptyGroups()
     const seen = new Set<string>()
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'inline-ref', 'property-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'contained-in', 'inline-ref', 'property-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
     for (const type of groupTypes) {
       const groupItems = source[type] ?? []
       for (const item of groupItems) {
@@ -3181,6 +3183,7 @@ export class PageDisplay {
     const groupSource: Record<PageDisplayItemType, PageDisplayItem[]> = {
       tag: tagItems,
       referenced: referencedItemsByType['referenced'] || [],
+      'contained-in': containedInItems,
       'inline-ref': referencedItemsByType['inline-ref'] || [],
       'property-ref': referencedItemsByType['property-ref'] || [],
       'referencing-alias': referencingAliasItems,
@@ -3194,7 +3197,7 @@ export class PageDisplay {
     const groupedItems = this.buildGroupedItems(groupSource, tagBlockIds, containedInBlockIds)
     const uniqueItems: PageDisplayItem[] = []
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'inline-ref', 'property-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'contained-in', 'inline-ref', 'property-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
     for (const type of groupTypes) {
       uniqueItems.push(...groupedItems[type])
     }
@@ -3257,8 +3260,10 @@ export class PageDisplay {
         
         // 根据引用类型确定itemType
         let itemType: PageDisplayItemType = 'referenced'
-        if (isTagBlock || isContainedIn) {
-          itemType = 'referenced' // 标签块或包含于块保持为referenced
+        if (isTagBlock) {
+          itemType = 'tag' // 标签块
+        } else if (isContainedIn) {
+          itemType = 'referenced' // 包含于块保持为referenced
         } else if (isInlineRef) {
           itemType = 'inline-ref' // 内联引用
         } else if (isPropertyRef) {
@@ -3304,11 +3309,11 @@ export class PageDisplay {
         const hasName = (block.aliases && block.aliases.length > 0) || block.text
         if (hasName) {
           const displayText = (block.aliases && block.aliases[0]) || block.text || `包含于块 ${block.id}`
-          const enhancedItem = await this.createPageDisplayItem(block, 'referenced', displayText)
+          const enhancedItem = await this.createPageDisplayItem(block, 'contained-in', displayText)
           
           // 确保包含于块有正确的标识
           enhancedItem._hide = false // 确保显示
-          enhancedItem.itemType = 'referenced' // 确保类型正确
+          enhancedItem.itemType = 'contained-in' // 确保类型正确
           
           containedInItems.push(enhancedItem)
           
@@ -4237,25 +4242,12 @@ export class PageDisplay {
               icon.className = 'page-display-item-icon ti ti-hash'
             } else if (item.itemType === 'referenced') {
               // 被引用块图标（当前块引用了这个块）
-              // 检查是否为标签块（通过ID比较）
-              const isTagBlock = tagBlockIds.includes(item.id)
-              const isInlineRef = inlineRefIds.includes(item.id)
-              const isContainedIn = containedInBlockIds.includes(item.id)
-              this.log(`PageDisplay: 被引用块 - ${item.text}, 是标签块: ${isTagBlock}, 是内联引用: ${isInlineRef}, 是包含于块: ${isContainedIn}, tagBlockIds: [${tagBlockIds.join(', ')}], inlineRefIds: [${inlineRefIds.join(', ')}], containedInBlockIds: [${containedInBlockIds.join(', ')}]`)
-              
-              if (isTagBlock || isContainedIn) {
-                // 标签块或包含于块：使用上箭头图标
-                this.log(`PageDisplay: 分配上箭头图标 (ti-arrow-up) - ${item.text} (${isTagBlock ? '标签块' : '包含于块'})`)
-                icon.className = 'page-display-item-icon ti ti-arrow-up'
-              } else if (isInlineRef) {
-                // 内联引用块：使用链接图标
-                this.log(`PageDisplay: 分配链接图标 (ti-link) - ${item.text}`)
-                icon.className = 'page-display-item-icon ti ti-link'
-              } else {
-                // 属性引用块：使用对齐图标
-                this.log(`PageDisplay: 分配对齐图标 (ti-align-box-center-stretch) - ${item.text}`)
-                icon.className = 'page-display-item-icon ti ti-align-box-center-stretch'
-              }
+              this.log(`PageDisplay: 分配上箭头图标 (ti-arrow-up) - ${item.text}`)
+              icon.className = 'page-display-item-icon ti ti-arrow-up'
+            } else if (item.itemType === 'contained-in') {
+              // 包含于块图标（当前块被包含在这个块中）
+              this.log(`PageDisplay: 分配包含于块图标 (ti-arrow-up) - ${item.text}`)
+              icon.className = 'page-display-item-icon ti ti-arrow-up'
             } else if (item.itemType === 'inline-ref') {
               // 内联引用块图标
               this.log(`PageDisplay: 分配链接图标 (ti-link) - ${item.text}`)
