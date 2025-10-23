@@ -352,14 +352,18 @@ class StyleManager {
     switch (className) {
       case 'page-display-container':
         element.style.cssText = `
-          margin: 12px 0;
-          padding: 16px;
+          margin: 8px 0;
+          padding: 8px 12px;
           background: transparent;
           border: none;
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           font-size: 14px;
           line-height: 1.5;
           color: ${colors.text};
+          max-width: 100%;
+          width: 100%;
+          box-sizing: border-box;
+          overflow: hidden;
         `
         break
         
@@ -367,8 +371,11 @@ class StyleManager {
         element.style.cssText = `
           display: flex;
           align-items: center;
-          margin-bottom: 12px;
+          margin-bottom: 8px;
           cursor: pointer;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 4px;
         `
         break
         
@@ -376,6 +383,8 @@ class StyleManager {
         element.style.cssText = `
           display: flex;
           align-items: center;
+          flex: 1;
+          min-width: 0;
         `
         break
         
@@ -413,8 +422,8 @@ class StyleManager {
         
       case 'page-display-search-icon':
         element.style.cssText = `
-          width: 28px;
-          height: 28px;
+          width: 24px;
+          height: 24px;
           background: ${colors.background};
           border: 1px solid ${colors.border};
           border-radius: 4px;
@@ -422,17 +431,19 @@ class StyleManager {
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          margin-left: 8px;
+          margin-left: 4px;
           flex-shrink: 0;
-          font-size: 14px;
+          font-size: 12px;
           color: ${colors.textMuted};
+          transition: all 0.15s ease;
+          user-select: none;
         `
         break
         
       case 'page-display-filter-icon':
         element.style.cssText = `
-          width: 28px;
-          height: 28px;
+          width: 24px;
+          height: 24px;
           background: ${colors.background};
           border: 1px solid ${colors.border};
           border-radius: 4px;
@@ -440,10 +451,12 @@ class StyleManager {
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          margin-left: 8px;
+          margin-left: 4px;
           flex-shrink: 0;
-          font-size: 14px;
+          font-size: 12px;
           color: ${colors.textMuted};
+          transition: all 0.15s ease;
+          user-select: none;
         `
         break
         
@@ -451,8 +464,8 @@ class StyleManager {
       case 'page-display-multiline-toggle-icon':
       case 'page-display-multicolumn-toggle-icon':
         element.style.cssText = `
-          width: 28px;
-          height: 28px;
+          width: 24px;
+          height: 24px;
           background: ${colors.background};
           border: 1px solid ${colors.border};
           border-radius: 4px;
@@ -460,10 +473,12 @@ class StyleManager {
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          margin-left: 8px;
+          margin-left: 4px;
           flex-shrink: 0;
-          font-size: 14px;
+          font-size: 12px;
           color: ${colors.textMuted};
+          transition: all 0.15s ease;
+          user-select: none;
         `
         break
         
@@ -510,10 +525,13 @@ class StyleManager {
           list-style: none;
           padding: 0;
           margin: 0;
-          max-height: 300px;
+          max-height: 250px;
           overflow-y: auto;
+          overflow-x: hidden;
           scrollbar-width: thin;
           scrollbar-color: ${this.isDarkMode() ? '#4a4a4a' : '#c0c0c0'} transparent;
+          width: 100%;
+          box-sizing: border-box;
         `
         
         // 添加 WebKit 滚动条样式
@@ -523,14 +541,17 @@ class StyleManager {
       case 'page-display-item':
         element.style.cssText = `
           position: relative;
-          padding: 4px 0 4px 20px;
+          padding: 2px 0 2px 16px;
           cursor: pointer;
           color: ${colors.text};
           font-size: 14px;
-          line-height: 1.5;
+          line-height: 1.4;
           transition: background-color 0.2s ease;
           display: flex;
           align-items: center;
+          width: 100%;
+          box-sizing: border-box;
+          overflow: hidden;
         `
         break
         
@@ -540,10 +561,10 @@ class StyleManager {
           left: 0;
           top: 50%;
           transform: translateY(-50%);
-          font-size: 14px;
+          font-size: 12px;
           color: ${colors.textMuted};
-          width: 16px;
-          height: 16px;
+          width: 14px;
+          height: 14px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -556,6 +577,10 @@ class StyleManager {
           font-weight: normal;
           line-height: 1.5;
           flex: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          min-width: 0;
         `
         break
         
@@ -676,6 +701,22 @@ class StyleManager {
       element.style.textOverflow = 'ellipsis'
     }
   }
+}
+
+/**
+ * 面板状态接口
+ */
+interface PanelState {
+  /** 搜索内容 */
+  searchText: string
+  /** 是否展开 */
+  isExpanded: boolean
+  /** 是否显示搜索框 */
+  isSearchVisible: boolean
+  /** 类型过滤状态 */
+  typeFilters: Record<string, boolean>
+  /** 滚动位置 */
+  scrollTop: number
 }
 
 /**
@@ -806,6 +847,8 @@ export class PageDisplay {
   private containers: Map<string, HTMLElement> = new Map()
   /** 多面板支持：存储每个面板的查询列表切换按钮 */
   private queryListToggleButtons: Map<string, HTMLElement> = new Map()
+  /** 多面板支持：存储每个面板的状态，包括搜索内容、展开状态等 */
+  private panelStates: Map<string, PanelState> = new Map()
   /** 插件名称，用于数据存储和API调用 */
   private pluginName: string
   /** 设置加载完成的任务 */
@@ -973,6 +1016,107 @@ export class PageDisplay {
    */
   private applyLineStyles(element: HTMLElement, multiLine: boolean) {
     this.styleManager.applyLineStyles(element, multiLine)
+  }
+
+  /**
+   * 获取面板状态
+   * @param panelId 面板ID
+   * @returns 面板状态，如果不存在则返回默认状态
+   */
+  private getPanelState(panelId: string): PanelState {
+    if (!this.panelStates.has(panelId)) {
+      this.panelStates.set(panelId, {
+        searchText: '',
+        isExpanded: !this.defaultCollapsed,
+        isSearchVisible: false,
+        typeFilters: {},
+        scrollTop: 0
+      })
+    }
+    return this.panelStates.get(panelId)!
+  }
+
+  /**
+   * 保存面板状态
+   * @param panelId 面板ID
+   * @param state 面板状态
+   */
+  private savePanelState(panelId: string, state: PanelState) {
+    this.panelStates.set(panelId, state)
+  }
+
+  /**
+   * 恢复面板状态到DOM
+   * @param panelId 面板ID
+   * @param container 容器元素
+   */
+  private restorePanelState(panelId: string, container: HTMLElement) {
+    const state = this.getPanelState(panelId)
+    
+    // 恢复搜索框状态
+    const searchInput = container.querySelector('.page-display-search-input') as HTMLInputElement
+    if (searchInput) {
+      searchInput.value = state.searchText
+    }
+    
+    // 恢复展开状态
+    const list = container.querySelector('.page-display-list') as HTMLElement
+    const arrow = container.querySelector('.page-display-arrow') as HTMLElement
+    if (list && arrow) {
+      if (state.isExpanded) {
+        list.style.display = this.multiColumn ? 'grid' : 'block'
+        list.style.opacity = '1'
+        list.style.maxHeight = '1000px'
+        arrow.innerHTML = '<i class="ti ti-chevron-down"></i>'
+      } else {
+        list.style.display = 'none'
+        list.style.opacity = '0'
+        list.style.maxHeight = '0'
+        arrow.innerHTML = '<i class="ti ti-chevron-right"></i>'
+      }
+    }
+    
+    // 恢复搜索框显示状态
+    const searchContainer = container.querySelector('.page-display-search-container') as HTMLElement
+    if (searchContainer) {
+      if (state.isSearchVisible) {
+        searchContainer.style.display = 'block'
+        searchContainer.style.opacity = '1'
+        searchContainer.style.maxHeight = '100px'
+      } else {
+        searchContainer.style.display = 'none'
+        searchContainer.style.opacity = '0'
+        searchContainer.style.maxHeight = '0'
+      }
+    }
+    
+    // 如果有搜索内容，确保搜索框值正确（避免重复触发）
+    if (state.searchText && state.searchText.trim()) {
+      if (searchInput && searchInput.value !== state.searchText) {
+        searchInput.value = state.searchText
+        // 延迟触发搜索，确保DOM完全渲染
+        setTimeout(() => {
+          const inputEvent = new Event('input', { bubbles: true })
+          searchInput.dispatchEvent(inputEvent)
+        }, 50)
+      }
+    }
+    
+    // 恢复滚动位置 - 在内容渲染前就设置，避免闪烁
+    if (state.scrollTop > 0) {
+      const list = container.querySelector('.page-display-list') as HTMLElement
+      if (list) {
+        // 立即设置滚动位置，避免闪烁
+        list.scrollTop = state.scrollTop
+        
+        // 如果内容还没完全渲染，再次设置确保位置正确
+        setTimeout(() => {
+          if (list.scrollTop !== state.scrollTop) {
+            list.scrollTop = state.scrollTop
+          }
+        }, 50)
+      }
+    }
   }
 
   // 切换图标显示状态
@@ -5338,10 +5482,11 @@ const typeConfigs = [
     functionButtonsContainer.style.cssText = `
       display: flex;
       align-items: center;
-      gap: 8px;
-      margin-left: 8px;
+      gap: 4px;
+      margin-left: 4px;
       opacity: 0;
       transition: opacity 0.2s ease;
+      flex-shrink: 0;
     `
     
     // 创建搜索图标
@@ -5412,8 +5557,16 @@ const typeConfigs = [
     // 搜索图标点击事件
     
     // 过滤图标点击事件
-    
-    filterIcon.addEventListener('click', () => {
+    filterIcon.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // 添加点击反馈
+      filterIcon.style.transform = 'scale(0.95)'
+      setTimeout(() => {
+        filterIcon.style.transform = 'scale(1)'
+      }, 100)
+      
       this.toggleTypeFilters()
       
       if (this.showTypeFilters) {
@@ -5437,23 +5590,63 @@ const typeConfigs = [
     })
     
     // 图标显示切换按钮事件
-    iconsToggleIcon.addEventListener('click', () => {
+    iconsToggleIcon.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // 添加点击反馈
+      iconsToggleIcon.style.transform = 'scale(0.95)'
+      setTimeout(() => {
+        iconsToggleIcon.style.transform = 'scale(1)'
+      }, 100)
+      
       this.toggleIcons()
       iconsToggleIcon.title = this.showIcons ? '隐藏图标' : '显示图标'
-      iconsToggleIcon.innerHTML = this.showIcons ? '<i class="ti ti-eye"></i>' : '<i class="ti ti-eye-off"></i>'
+      // 使用更平滑的图标切换，避免innerHTML重新设置
+      const icon = iconsToggleIcon.querySelector('i')
+      if (icon) {
+        icon.className = this.showIcons ? 'ti ti-eye' : 'ti ti-eye-off'
+      }
     })
     
     // 多行显示切换按钮事件
-    multiLineToggleIcon.addEventListener('click', () => {
+    multiLineToggleIcon.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // 添加点击反馈
+      multiLineToggleIcon.style.transform = 'scale(0.95)'
+      setTimeout(() => {
+        multiLineToggleIcon.style.transform = 'scale(1)'
+      }, 100)
+      
       this.toggleMultiLine()
       multiLineToggleIcon.title = this.multiLine ? '单行显示' : '多行显示'
-      multiLineToggleIcon.innerHTML = this.multiLine ? '<i class="ti ti-layout-line"></i>' : '<i class="ti ti-layout-rows"></i>'
+      // 使用更平滑的图标切换，避免innerHTML重新设置
+      const icon = multiLineToggleIcon.querySelector('i')
+      if (icon) {
+        icon.className = this.multiLine ? 'ti ti-layout-line' : 'ti ti-layout-rows'
+      }
     })
     
     // 多列显示切换按钮事件
-    multiColumnToggleIcon.addEventListener('click', () => {
+    multiColumnToggleIcon.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // 添加点击反馈
+      multiColumnToggleIcon.style.transform = 'scale(0.95)'
+      setTimeout(() => {
+        multiColumnToggleIcon.style.transform = 'scale(1)'
+      }, 100)
+      
       this.toggleMultiColumn()
       multiColumnToggleIcon.title = this.multiColumn ? '单列显示' : '多列显示'
+      // 使用更平滑的图标切换，避免innerHTML重新设置
+      const icon = multiColumnToggleIcon.querySelector('i')
+      if (icon) {
+        icon.className = this.multiColumn ? 'ti ti-layout-columns' : 'ti ti-layout-grid'
+      }
     })
     
     // 标题容器的悬浮效果 - 显示/隐藏功能按钮
@@ -5538,6 +5731,11 @@ const typeConfigs = [
           isTransitioning = false
         }, 100)
       }
+      
+      // 保存展开状态
+      const currentState = this.getPanelState(targetPanelId)
+      currentState.isExpanded = !newCollapsed
+      this.savePanelState(targetPanelId, currentState)
     }
     
     // 添加点击事件
@@ -5575,6 +5773,11 @@ const typeConfigs = [
           }
         }, 200) // 与transition时间一致
       }
+      
+      // 保存搜索框显示状态
+      const currentState = this.getPanelState(targetPanelId)
+      currentState.isSearchVisible = isSearchVisible
+      this.savePanelState(targetPanelId, currentState)
     }
 
     // 创建搜索框（默认隐藏）
@@ -5922,13 +6125,16 @@ const typeConfigs = [
             childContent.className = 'page-display-child-content'
             childContent.style.cssText = `
               margin-top: 4px;
-              padding-left: 20px;
-              font-size: 12px;
+              padding-left: 0px;
+              font-size: 14px;
               color: var(--orca-color-text-2);
               border-left: 2px solid var(--orca-color-border-2);
               margin-left: 8px;
-              width: 100%;
+              width: calc(100% - 8px);
+              max-width: calc(100% - 8px);
               display: block;
+              box-sizing: border-box;
+              overflow: hidden;
             `
             
             // 创建展开/收起状态
@@ -6086,7 +6292,13 @@ const typeConfigs = [
     }
     
     // 添加搜索事件监听
-    searchInput.addEventListener('input', updateDisplay)
+    searchInput.addEventListener('input', () => {
+      updateDisplay()
+      // 保存搜索状态
+      const currentState = this.getPanelState(targetPanelId)
+      currentState.searchText = searchInput.value
+      this.savePanelState(targetPanelId, currentState)
+    })
     
     searchContainer.appendChild(searchInput)
     container.appendChild(searchContainer)
@@ -6097,6 +6309,12 @@ const typeConfigs = [
     this.applyStyles(list, 'page-display-list')
     if (this.multiColumn) {
       this.applyMultiColumnStyles(list)
+    }
+    
+    // 预设滚动位置，避免闪烁
+    const currentPanelState = this.getPanelState(targetPanelId)
+    if (currentPanelState.scrollTop > 0) {
+      list.scrollTop = currentPanelState.scrollTop
     }
     
     // 添加 WebKit 滚动条样式
@@ -6155,6 +6373,19 @@ const typeConfigs = [
     }
 
     container.appendChild(list)
+    
+    // 添加滚动事件监听器来保存滚动位置
+    list.addEventListener('scroll', () => {
+      const currentState = this.getPanelState(targetPanelId)
+      currentState.scrollTop = list.scrollTop
+      this.savePanelState(targetPanelId, currentState)
+    })
+    
+    // 在初始显示前设置搜索内容，避免闪烁
+    const initialPanelState = this.getPanelState(targetPanelId)
+    if (initialPanelState.searchText && initialPanelState.searchText.trim()) {
+      searchInput.value = initialPanelState.searchText
+    }
     
     // 初始显示所有项目
     updateDisplay()
@@ -6258,6 +6489,9 @@ const typeConfigs = [
     this.log("PageDisplay: Container inserted using method:", insertMethod)
     this.log("PageDisplay: Container parent:", container.parentNode)
     this.log("PageDisplay: Container visible:", container.offsetHeight > 0)
+    
+    // 恢复面板状态
+    this.restorePanelState(targetPanelId, container)
     
     // 创建查询列表控制按钮
     this.createQueryListToggleButton()

@@ -19,10 +19,11 @@
 .page-display-function-buttons-container {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-left: 8px;
+    gap: 4px;
+    margin-left: 4px;
     opacity: 0;
     transition: opacity 0.2s ease;
+    flex-shrink: 0;
 }
 
 /* 功能按钮基础样式 */
@@ -31,8 +32,8 @@
 .page-display-icons-toggle-icon,
 .page-display-multiline-toggle-icon,
 .page-display-multicolumn-toggle-icon {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     background: var(--orca-color-bg-1);
     border: 1px solid var(--orca-color-border-1);
     border-radius: 4px;
@@ -40,11 +41,12 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    margin-left: 8px;
+    margin-left: 4px;
     flex-shrink: 0;
-    font-size: 14px;
+    font-size: 12px;
     color: var(--orca-color-text-2);
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
+    user-select: none;
 }
 
 /* 功能按钮悬浮效果 */
@@ -59,8 +61,8 @@
 
 /* 查询列表切换按钮样式 */
 .page-display-query-list-toggle {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     background: var(--orca-color-bg-1);
     border: 1px solid var(--orca-color-border-1);
     border-radius: 4px;
@@ -68,12 +70,13 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    margin-left: 8px;
+    margin-left: 4px;
     opacity: 0;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
     flex-shrink: 0;
-    font-size: 14px;
+    font-size: 12px;
     color: var(--orca-color-text-2);
+    user-select: none;
 }
 
 .page-display-query-list-toggle:hover {
