@@ -1,5 +1,4 @@
 import type { Block, DbId, BlockRef } from "./orca.d.ts"
-import { t } from "./libs/l10n"
 
 /**
  * 错误处理器类
@@ -181,17 +180,6 @@ class ApiService {
     }
   }
 
-  /**
-   * 获取子标签块
-   */
-  async getChildrenTagBlocks(blockId: DbId): Promise<Block[]> {
-    try {
-      return await this.call("get-children-tag-blocks", blockId) || []
-    } catch (error) {
-      this.logger.error("Failed to get children tag blocks:", error)
-      return []
-    }
-  }
 
   /**
    * 通过别名获取块ID
@@ -2063,162 +2051,159 @@ const typeConfigs = [
 
   // 获取子标签块
   private async getChildrenTagBlocks(blockId: DbId): Promise<Block[]> {
-    try {
-      // 使用 get-children-tag-blocks API 获取完整的块信息
-      const childrenTagBlocks = await this.cachedApiCall("get-children-tag-blocks", blockId)
-      return childrenTagBlocks || []
-    } catch (error) {
-      this.logError("Failed to get children tag blocks:", error)
-      return []
-    }
+    return this.safeApiCall(
+      () => this.cachedApiCall("get-children-tag-blocks", blockId),
+      "Failed to get children tag blocks:",
+      []
+    )
   }
 
 
   // 获取引用当前块的别名块（检查根块是否为别名块）
   private async getReferencingAliasBlocks(blockId: DbId): Promise<Block[]> {
-    try {
-      // 获取当前块的信息
-      const currentBlock = await this.getBlockInfo(blockId)
-      if (!currentBlock || !currentBlock.backRefs || currentBlock.backRefs.length === 0) {
-        return []
-      }
-
-      // 获取所有引用当前块的块ID
-      const referencingBlockIds = currentBlock.backRefs.map(backRef => backRef.from)
-      
-      if (referencingBlockIds.length === 0) return []
-      
-      // 批量获取引用块的详细信息
-      const referencingBlocks = await this.cachedApiCall("get-blocks", referencingBlockIds)
-      if (!referencingBlocks) return []
-
-      // 过滤出根块是别名块的引用，排除自身块
-      const aliasBlocks: Block[] = []
-      for (const block of referencingBlocks) {
-        // 排除自身块
-        if (block.id === blockId) {
-          continue
+    return this.safeApiCall(
+      async () => {
+        // 获取当前块的信息
+        const currentBlock = await this.apiService.getBlock(blockId)
+        if (!currentBlock || !currentBlock.backRefs || currentBlock.backRefs.length === 0) {
+          return []
         }
+
+        // 获取所有引用当前块的块ID
+        const referencingBlockIds = currentBlock.backRefs.map(backRef => backRef.from)
         
-        // 检查是否有父块
-        if (block.parent) {
+        if (referencingBlockIds.length === 0) return []
+        
+        // 批量获取引用块的详细信息
+        const referencingBlocks = await this.cachedApiCall("get-blocks", referencingBlockIds)
+        if (!referencingBlocks) return []
+
+        // 过滤出根块是别名块的引用，排除自身块
+        const aliasBlocks: Block[] = []
+        for (const block of referencingBlocks) {
+          // 排除自身块
+          if (block.id === blockId) {
+            continue
+          }
           
-          // 获取根块信息
-          const rootBlock = await this.getBlockInfo(block.parent)
-          if (rootBlock && rootBlock.aliases && rootBlock.aliases.length > 0) {
-            // 排除自身块
-            if (rootBlock.id !== blockId) {
-              aliasBlocks.push(rootBlock)
+          // 检查是否有父块
+          if (block.parent) {
+            
+            // 获取根块信息
+            const rootBlock = await this.apiService.getBlock(block.parent)
+            if (rootBlock && rootBlock.aliases && rootBlock.aliases.length > 0) {
+              // 排除自身块
+              if (rootBlock.id !== blockId) {
+                aliasBlocks.push(rootBlock)
+              }
             }
           } else {
-          }
-        } else {
-          // 如果没有父块，检查当前块本身是否是别名块
-          if (block.aliases && block.aliases.length > 0) {
-            aliasBlocks.push(block)
+            // 如果没有父块，检查当前块本身是否是别名块
+            if (block.aliases && block.aliases.length > 0) {
+              aliasBlocks.push(block)
+            }
           }
         }
-      }
-      
-      return aliasBlocks
-    } catch (error) {
-      this.logError("Failed to get referencing alias blocks:", error)
-      return []
-    }
+        
+        return aliasBlocks
+      },
+      "Failed to get referencing alias blocks:",
+      []
+    )
   }
 
   // 获取反链中引用的别名块（终极优化版 - 最多2次API调用）
   private async getBackrefAliasBlocks(blockId: DbId): Promise<Block[]> {
-    try {
-      if (!blockId) return []
-      
-      // 获取当前块信息
-      const currentBlock = await this.getBlockInfo(blockId)
-      if (!currentBlock?.backRefs?.length) return []
+    return this.safeApiCall(
+      async () => {
+        if (!blockId) return []
+        
+        // 获取当前块信息
+        const currentBlock = await this.apiService.getBlock(blockId)
+        if (!currentBlock?.backRefs?.length) return []
 
-      // 1. 获取反链块ID
-      const backrefBlockIds = currentBlock.backRefs.map(backRef => backRef.from).filter(id => id != null)
-      if (backrefBlockIds.length === 0) return []
-      
-      // 2. 批量获取反链块
-      const backrefBlocks = await this.cachedApiCall("get-blocks", backrefBlockIds)
-      if (!backrefBlocks?.length) return []
-      
-      // 3. 收集所有需要查询的块ID（子块 + 被引用块）
-      const allBlockIds = new Set<DbId>()
-      
-      backrefBlocks.forEach((block: any) => {
-        // 添加子块ID
-        if (block.children?.length) {
-          block.children.forEach((childId: any) => allBlockIds.add(childId))
+        // 1. 获取反链块ID
+        const backrefBlockIds = currentBlock.backRefs.map(backRef => backRef.from).filter(id => id != null)
+        if (backrefBlockIds.length === 0) return []
+        
+        // 2. 批量获取反链块
+        const backrefBlocks = await this.cachedApiCall("get-blocks", backrefBlockIds)
+        if (!backrefBlocks?.length) return []
+        
+        // 3. 收集所有需要查询的块ID（子块 + 被引用块）
+        const allBlockIds = new Set<DbId>()
+        
+        backrefBlocks.forEach((block: any) => {
+          // 添加子块ID
+          if (block.children?.length) {
+            block.children.forEach((childId: any) => allBlockIds.add(childId))
+          }
+          // 添加被引用块ID
+          if (block.refs?.length) {
+            block.refs.forEach((ref: any) => {
+              if (ref.to) allBlockIds.add(ref.to)
+            })
+          }
+        })
+        
+        // 4. 一次性获取所有块
+        if (allBlockIds.size === 0) return []
+        
+        const allBlocks = await this.cachedApiCall("get-blocks", Array.from(allBlockIds))
+        if (!allBlocks?.length) return []
+        
+        // 5. 从子块中收集额外的被引用块ID
+        const additionalReferencedIds = new Set<DbId>()
+        allBlocks.forEach((block: any) => {
+          if (block.refs?.length) {
+            block.refs.forEach((ref: any) => {
+              if (ref.to) additionalReferencedIds.add(ref.to)
+            })
+          }
+        })
+        
+        // 6. 获取额外的被引用块
+        if (additionalReferencedIds.size > 0) {
+          const additionalBlocks = await this.cachedApiCall("get-blocks", Array.from(additionalReferencedIds))
+          if (additionalBlocks?.length) {
+            allBlocks.push(...additionalBlocks)
+          }
         }
-        // 添加被引用块ID
-        if (block.refs?.length) {
-          block.refs.forEach((ref: any) => {
-            if (ref.to) allBlockIds.add(ref.to)
-          })
-        }
-      })
-      
-      // 4. 一次性获取所有块
-      if (allBlockIds.size === 0) return []
-      
-      const allBlocks = await this.cachedApiCall("get-blocks", Array.from(allBlockIds))
-      if (!allBlocks?.length) return []
-      
-      // 5. 从子块中收集额外的被引用块ID
-      const additionalReferencedIds = new Set<DbId>()
-      allBlocks.forEach((block: any) => {
-        if (block.refs?.length) {
-          block.refs.forEach((ref: any) => {
-            if (ref.to) additionalReferencedIds.add(ref.to)
-          })
-        }
-      })
-      
-      // 6. 获取额外的被引用块
-      if (additionalReferencedIds.size > 0) {
-        const additionalBlocks = await this.cachedApiCall("get-blocks", Array.from(additionalReferencedIds))
-        if (additionalBlocks?.length) {
-          allBlocks.push(...additionalBlocks)
-        }
-      }
-      
-      // 7. 筛选别名块，排除自身块
-      return allBlocks.filter((block: any) => 
-        block?.aliases?.length > 0 && block.id !== blockId
-      )
-
-    } catch (error) {
-      this.logError("Failed to get backref alias blocks:", error)
-      return []
-    }
+        
+        // 7. 筛选别名块，排除自身块
+        return allBlocks.filter((block: any) => 
+          block?.aliases?.length > 0 && block.id !== blockId
+        )
+      },
+      "Failed to get backref alias blocks:",
+      []
+    )
   }
 
   // 获取直接的反链块（引用当前块的块）
   private async getBackrefBlocks(blockId: DbId): Promise<Block[]> {
-    try {
-      if (!blockId) return []
-      
-      // 获取当前块信息
-      const currentBlock = await this.getBlockInfo(blockId)
-      if (!currentBlock?.backRefs?.length) return []
+    return this.safeApiCall(
+      async () => {
+        if (!blockId) return []
+        
+        // 获取当前块信息
+        const currentBlock = await this.apiService.getBlock(blockId)
+        if (!currentBlock?.backRefs?.length) return []
 
-      // 获取反链块ID
-      const backrefBlockIds = currentBlock.backRefs.map(backRef => backRef.from).filter(id => id != null)
-      if (backrefBlockIds.length === 0) return []
-      
-      // 批量获取反链块
-      const backrefBlocks = await this.cachedApiCall("get-blocks", backrefBlockIds)
-      if (!backrefBlocks?.length) return []
-      
-      // 排除自身块
-      return backrefBlocks.filter((block: any) => block.id !== blockId)
-
-    } catch (error) {
-      this.logError("Failed to get backref blocks:", error)
-      return []
-    }
+        // 获取反链块ID
+        const backrefBlockIds = currentBlock.backRefs.map(backRef => backRef.from).filter(id => id != null)
+        if (backrefBlockIds.length === 0) return []
+        
+        // 批量获取反链块
+        const backrefBlocks = await this.cachedApiCall("get-blocks", backrefBlockIds)
+        if (!backrefBlocks?.length) return []
+        
+        // 排除自身块
+        return backrefBlocks.filter((block: any) => block.id !== blockId)
+      },
+      "Failed to get backref blocks:",
+      []
+    )
   }
 
   // 递归获取所有子标签的反链块
@@ -2262,7 +2247,7 @@ const typeConfigs = [
       processedBlocks.add(blockId)
       
       // 获取当前块的子标签
-      const childrenTags = await this.getChildrenTags(blockId)
+      const childrenTags = await this.apiService.getChildrenTags(blockId)
       if (!childrenTags?.length) return
       
       // 遍历每个子标签
@@ -2320,7 +2305,7 @@ const typeConfigs = [
       processedBlocks.add(blockId)
       
       // 获取当前块的子标签
-      const childrenTags = await this.getChildrenTags(blockId)
+      const childrenTags = await this.apiService.getChildrenTags(blockId)
       if (!childrenTags?.length) return
       
       // 遍历每个子标签
@@ -2349,7 +2334,7 @@ const typeConfigs = [
   private async getChildReferencedAliasBlocks(blockId: DbId, tagBlockIds: DbId[] = []): Promise<Block[]> {
     try {
       // 获取当前块的信息
-      const currentBlock = await this.getBlockInfo(blockId)
+      const currentBlock = await this.apiService.getBlock(blockId)
       if (!currentBlock) {
         return []
       }
@@ -2464,7 +2449,7 @@ const typeConfigs = [
   private async getChildReferencedTagAliasBlocks(blockId: DbId, tagBlockIds: DbId[] = []): Promise<Block[]> {
     try {
       // 获取当前块的信息
-      const currentBlock = await this.getBlockInfo(blockId)
+      const currentBlock = await this.apiService.getBlock(blockId)
       if (!currentBlock) {
         return []
       }
@@ -2548,143 +2533,153 @@ const typeConfigs = [
    * @param blockId 当前块ID
    * @returns 包含被引用块、标签块ID和内联引用ID的对象
    */
+  /**
+   * 从块文本中解析标签并获取标签块ID
+   */
+  private async parseTagsFromText(text: string): Promise<DbId[]> {
+    const tagMatches = (text || "").match(/#[^,\n]+/g) || []
+    const tagBlockIds: DbId[] = []
+    
+    for (const tagText of tagMatches) {
+      const aliasName = tagText.substring(1) // 去掉 # 符号
+      
+      try {
+        const tagResult = await this.cachedApiCall("get-blockid-by-alias", aliasName)
+        
+        if (tagResult && tagResult.id) {
+          tagBlockIds.push(tagResult.id)
+        } else {
+          // 尝试去掉空格后再次查找
+          const trimmedAlias = aliasName.trim()
+          if (trimmedAlias !== aliasName) {
+            const trimmedResult = await this.cachedApiCall("get-blockid-by-alias", trimmedAlias)
+            if (trimmedResult && trimmedResult.id) {
+              tagBlockIds.push(trimmedResult.id)
+            }
+          }
+        }
+      } catch (error) {
+        // 忽略错误，继续处理下一个标签
+      }
+    }
+    
+    return tagBlockIds
+  }
+
+  /**
+   * 处理块的引用，分类为内联引用和属性引用
+   */
+  private async processReferences(currentBlock: Block, tagBlockIds: DbId[]): Promise<{
+    referencedBlocks: Block[]
+    inlineRefIds: DbId[]
+    propertyRefIds: DbId[]
+  } | null> {
+    if (!currentBlock.refs || currentBlock.refs.length === 0) {
+      this.log("PageDisplay: No refs found in current block")
+      return null
+    }
+
+    // 收集所有引用ID
+    const allReferencedBlockIds = currentBlock.refs.map(ref => ref.to)
+    this.log("PageDisplay: 所有引用块ID:", allReferencedBlockIds)
+    
+    // 获取所有被引用块的详细信息
+    const referencedBlocks = await this.cachedApiCall("get-blocks", allReferencedBlockIds)
+    if (!referencedBlocks) {
+      return null
+    }
+    
+    // 分别处理不同类型的引用
+    const inlineRefIds: DbId[] = []
+    const propertyRefIds: DbId[] = []
+    
+    for (const ref of currentBlock.refs) {
+      const referencedBlock = referencedBlocks.find((block: any) => block.id === ref.to)
+      const isReferencedBlockAlias = referencedBlock && referencedBlock.aliases && referencedBlock.aliases.length > 0
+      
+      let isInlineRef = false
+      
+      // 基于DOM结构识别内联引用：data-type="r" 对应数字值
+      if (ref.type === 0 || ref.type === 1) {
+        isInlineRef = true
+      }
+      // 明确识别属性引用：有 data 属性且不是内联引用
+      else if (ref.data && ref.data.length > 0) {
+        this.log(`PageDisplay: 识别为属性引用 - ref.to: ${ref.to}, data:`, ref.data)
+        isInlineRef = false
+      }
+      // 明确识别内联引用：有 alias 属性
+      else if (ref.alias) {
+        isInlineRef = true
+      }
+      // 明确识别标签引用：type = 2
+      else if (ref.type === 2) {
+        this.log(`PageDisplay: 识别为标签引用 - ref.to: ${ref.to}, type: ${ref.type}`)
+        isInlineRef = false
+        // 标签引用需要特殊处理，添加到标签块ID列表中
+        if (!tagBlockIds.includes(ref.to)) {
+          tagBlockIds.push(ref.to)
+        }
+      }
+      // 明确识别内联引用：在标签块ID中
+      else if (tagBlockIds.includes(ref.to)) {
+        isInlineRef = true
+      }
+      // 对于非别名块：解析 content 查找 trv/trva 片段
+      else if (!isReferencedBlockAlias && referencedBlock) {
+        const hasInlineRefInContent = this.checkInlineRefInContent(referencedBlock, ref.to)
+        if (hasInlineRefInContent) {
+          isInlineRef = true
+        } else {
+          isInlineRef = false
+        }
+      }
+      // 其他情况：根据 type 值判断
+      else if (ref.type !== undefined && ref.type > 2) {
+        this.log(`PageDisplay: 根据type值识别为属性引用 - ref.to: ${ref.to}, type: ${ref.type}`)
+        isInlineRef = false
+      }
+      // 默认情况：假设是内联引用（因为大多数引用都是内联的）
+      else {
+        isInlineRef = true
+      }
+      
+      if (ref.type === 2) {
+        // 标签引用不添加到任何引用列表中，因为已经在上面添加到tagBlockIds中
+        this.log(`PageDisplay: 标签引用已处理 - ref.to: ${ref.to}`)
+      } else if (isInlineRef) {
+        inlineRefIds.push(ref.to)
+      } else {
+        propertyRefIds.push(ref.to)
+      }
+    }
+    
+    this.log("PageDisplay: 属性引用数量:", propertyRefIds.length)
+    this.log("PageDisplay: 内联引用块ID:", inlineRefIds)
+    this.log("PageDisplay: 属性引用块ID:", propertyRefIds)
+    
+    return { referencedBlocks, inlineRefIds, propertyRefIds }
+  }
+
   private async getReferencedBlocks(blockId: DbId): Promise<ReferencedBlocksResult> {
     try {
-      
       // 获取当前块的信息
-      const currentBlock = await this.getBlockInfo(blockId)
+      const currentBlock = await this.apiService.getBlock(blockId)
       if (!currentBlock) {
         return { blocks: [], tagBlockIds: [], inlineRefIds: [], propertyRefIds: [] }
       }
 
-
-      // 1. 从当前块文本中解析标签（如 #💬番剧, #⭐五星, #我的标签）
-      // 支持带空格的标签，匹配 #标签 格式，直到遇到逗号或行尾
-      const tagMatches = (currentBlock.text || "").match(/#[^,\n]+/g) || []
-      
-      // 提取标签块ID（通过别名查找）
-      const tagBlockIds: DbId[] = []
-      for (const tagText of tagMatches) {
-        const aliasName = tagText.substring(1) // 去掉 # 符号
-        
-        try {
-          const tagResult = await this.cachedApiCall("get-blockid-by-alias", aliasName)
-          
-          if (tagResult && tagResult.id) {
-            tagBlockIds.push(tagResult.id)
-          } else {
-            
-            // 尝试去掉空格后再次查找
-            const trimmedAlias = aliasName.trim()
-            if (trimmedAlias !== aliasName) {
-              const trimmedResult = await this.cachedApiCall("get-blockid-by-alias", trimmedAlias)
-              if (trimmedResult && trimmedResult.id) {
-                tagBlockIds.push(trimmedResult.id)
-              } else {
-              }
-            }
-          }
-        } catch (error) {
-        }
-      }
+      // 1. 从当前块文本中解析标签
+      const tagBlockIds = await this.parseTagsFromText(currentBlock.text || "")
       
 
-      // 2. 从当前块的引用中获取被引用的块ID
-      const allReferencedBlockIds: DbId[] = []
-      const inlineRefIds: DbId[] = []
-      const propertyRefIds: DbId[] = []
-      let referencedBlocks: Block[] = []
-      
-      // 检查当前块是否有引用其他块
-      if (currentBlock.refs && currentBlock.refs.length > 0) {
-        // 先收集所有引用ID
-        allReferencedBlockIds.push(...currentBlock.refs.map(ref => ref.to))
-        this.log("PageDisplay: 所有引用块ID:", allReferencedBlockIds)
-        
-        // 获取所有被引用块的详细信息
-        referencedBlocks = await this.cachedApiCall("get-blocks", allReferencedBlockIds)
-        if (!referencedBlocks) {
-          return { blocks: [], tagBlockIds: [], inlineRefIds: [], propertyRefIds: [] }
-        }
-        
-        // 分别处理不同类型的引用
-        const inlineRefs: BlockRef[] = []
-        const propertyRefs: BlockRef[] = []
-        
-        for (const ref of currentBlock.refs) {
-          
-          // 获取被引用块的信息
-          const referencedBlock = referencedBlocks.find((block: any) => block.id === ref.to)
-          const isReferencedBlockAlias = referencedBlock && referencedBlock.aliases && referencedBlock.aliases.length > 0
-          
-          
-          let isInlineRef = false
-          
-          // 基于DOM结构识别内联引用：data-type="r" 对应数字值
-          // 根据DOM结构，内联引用的type可能是特定数字值
-          if (ref.type === 0 || ref.type === 1) {
-            isInlineRef = true
-          }
-          // 明确识别属性引用：有 data 属性且不是内联引用
-          else if (ref.data && ref.data.length > 0) {
-            this.log(`PageDisplay: 识别为属性引用 - ref.to: ${ref.to}, data:`, ref.data)
-            isInlineRef = false
-          }
-          // 明确识别内联引用：有 alias 属性
-          else if (ref.alias) {
-            isInlineRef = true
-          }
-          // 明确识别标签引用：type = 2
-          else if (ref.type === 2) {
-            this.log(`PageDisplay: 识别为标签引用 - ref.to: ${ref.to}, type: ${ref.type}`)
-            isInlineRef = false
-            // 标签引用需要特殊处理，添加到标签块ID列表中
-            if (!tagBlockIds.includes(ref.to)) {
-              tagBlockIds.push(ref.to)
-            }
-          }
-          // 明确识别内联引用：在标签块ID中
-          else if (tagBlockIds.includes(ref.to)) {
-            isInlineRef = true
-          }
-          // 对于非别名块：解析 content 查找 trv/trva 片段
-          else if (!isReferencedBlockAlias && referencedBlock) {
-            const hasInlineRefInContent = this.checkInlineRefInContent(referencedBlock, ref.to)
-            if (hasInlineRefInContent) {
-              isInlineRef = true
-            } else {
-              isInlineRef = false
-            }
-          }
-          // 其他情况：根据 type 值判断
-          else if (ref.type !== undefined && ref.type > 2) {
-            this.log(`PageDisplay: 根据type值识别为属性引用 - ref.to: ${ref.to}, type: ${ref.type}`)
-            isInlineRef = false
-          }
-          // 默认情况：假设是内联引用（因为大多数引用都是内联的）
-          else {
-            isInlineRef = true
-          }
-          
-          if (ref.type === 2) {
-            // 标签引用不添加到任何引用列表中，因为已经在上面添加到tagBlockIds中
-            this.log(`PageDisplay: 标签引用已处理 - ref.to: ${ref.to}`)
-          } else if (isInlineRef) {
-            inlineRefs.push(ref)
-            inlineRefIds.push(ref.to)
-          } else {
-            propertyRefs.push(ref)
-            propertyRefIds.push(ref.to)
-          }
-        }
-        
-        this.log("PageDisplay: 属性引用数量:", propertyRefs.length)
-        this.log("PageDisplay: 内联引用块ID:", inlineRefIds)
-        this.log("PageDisplay: 属性引用块ID:", propertyRefIds)
-      } else {
-        this.log("PageDisplay: No refs found in current block")
+      // 2. 处理引用
+      const refResult = await this.processReferences(currentBlock, tagBlockIds)
+      if (!refResult) {
         return { blocks: [], tagBlockIds: [], inlineRefIds: [], propertyRefIds: [] }
       }
+      
+      const { referencedBlocks, inlineRefIds, propertyRefIds } = refResult
 
       // 排除自身块
       const filteredBlocks = referencedBlocks.filter((block: any) => block.id !== blockId)
@@ -2703,10 +2698,23 @@ const typeConfigs = [
     return this.apiService.call(apiType, ...args)
   }
 
-  // 获取块信息（委托给API服务）
-  private async getBlockInfo(blockId: DbId): Promise<Block | null> {
-    return this.apiService.getBlock(blockId)
+  /**
+   * 统一的API调用包装器，包含错误处理
+   */
+  private async safeApiCall<T>(
+    apiCall: () => Promise<T>,
+    errorMessage: string,
+    fallbackValue: T
+  ): Promise<T> {
+    try {
+      return await apiCall()
+    } catch (error) {
+      this.logError(errorMessage, error)
+      return fallbackValue
+    }
   }
+
+  // 获取块信息（委托给API服务）
 
   // 检查块是否为页面（通过_hide属性）
   /**
@@ -2875,7 +2883,7 @@ const typeConfigs = [
       this.log(`PageDisplay: 开始获取子块内联块引用，块ID: ${blockId}`)
       
       // 获取当前块的信息
-      const currentBlock = await this.getBlockInfo(blockId)
+      const currentBlock = await this.apiService.getBlock(blockId)
       if (!currentBlock) {
         this.log(`PageDisplay: 无法获取当前块信息: ${blockId}`)
         return []
@@ -3594,21 +3602,15 @@ const typeConfigs = [
    * @returns 页面直接子块显示项目列表
    */
   private async processPageDirectChildrenItems(pageDirectChildren: Block[]): Promise<PageDisplayItem[]> {
-    this.log("PageDisplay: processPageDirectChildrenItems called with", pageDirectChildren.length, "blocks")
     const pageDirectChildrenItems: PageDisplayItem[] = []
     for (const block of pageDirectChildren) {
-      this.log("PageDisplay: processing page direct child block", block)
       const hasName = (block.aliases && block.aliases.length > 0) || block.text
       if (hasName) {
         const displayText = (block.aliases && block.aliases[0]) || block.text || `页面直接子块 ${block.id}`
         const enhancedItem = await this.createPageDisplayItem(block, 'page-direct-children', displayText)
         pageDirectChildrenItems.push(enhancedItem)
-        this.log("PageDisplay: added page direct child item", { id: block.id, text: displayText })
-      } else {
-        this.log("PageDisplay: skipping page direct child block (no name/aliases)", block)
       }
     }
-    this.log("PageDisplay: processPageDirectChildrenItems returning", pageDirectChildrenItems.length, "items")
     return pageDirectChildrenItems
   }
 
@@ -3618,21 +3620,15 @@ const typeConfigs = [
    * @returns 页面递归子块显示项目列表
    */
   private async processPageRecursiveChildrenItems(pageRecursiveChildren: Block[]): Promise<PageDisplayItem[]> {
-    this.log("PageDisplay: processPageRecursiveChildrenItems called with", pageRecursiveChildren.length, "blocks")
     const pageRecursiveChildrenItems: PageDisplayItem[] = []
     for (const block of pageRecursiveChildren) {
-      this.log("PageDisplay: processing page recursive child block", block)
       const hasName = (block.aliases && block.aliases.length > 0) || block.text
       if (hasName) {
         const displayText = (block.aliases && block.aliases[0]) || block.text || `页面递归子块 ${block.id}`
         const enhancedItem = await this.createPageDisplayItem(block, 'page-recursive-children', displayText)
         pageRecursiveChildrenItems.push(enhancedItem)
-        this.log("PageDisplay: added page recursive child item", { id: block.id, text: displayText })
-      } else {
-        this.log("PageDisplay: skipping page recursive child block (no name/aliases)", block)
       }
     }
-    this.log("PageDisplay: processPageRecursiveChildrenItems returning", pageRecursiveChildrenItems.length, "items")
     return pageRecursiveChildrenItems
   }
 
@@ -4072,7 +4068,7 @@ const typeConfigs = [
       recursiveBackrefBlocks,
       recursiveBackrefAliasBlocks
     ] = await Promise.all([
-      this.getChildrenTags(rootBlockId),
+      this.apiService.getChildrenTags(rootBlockId),
       this.getContainedInBlocks(),
       this.getReferencingAliasBlocks(rootBlockId),
       this.getChildReferencedAliasBlocks(rootBlockId, tagBlockIds),
@@ -4523,9 +4519,6 @@ const typeConfigs = [
   }
 
   // 获取子标签（委托给API服务）
-  private async getChildrenTags(blockId: DbId): Promise<Block[]> {
-    return this.apiService.getChildrenTags(blockId)
-  }
 
   /**
    * 解析标签层级结构，获取被引用的包含于块
