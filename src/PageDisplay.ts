@@ -726,7 +726,7 @@ class StyleManager {
 /**
  * 页面显示项目类型
  */
-type PageDisplayItemType = 'tag' | 'referenced' | 'contained-in' | 'inline-ref' | 'property-ref' | 'referencing-alias' | 'child-referenced-alias' | 'backref-alias-blocks' | 'backref' | 'recursive-backref' | 'recursive-backref-alias'
+type PageDisplayItemType = 'tag' | 'referenced-tag' | 'referenced' | 'property-ref' | 'contained-in' | 'inline-ref' | 'referencing-alias' | 'child-referenced-alias' | 'child-referenced-tag-alias' | 'backref-alias-blocks' | 'backref' | 'recursive-backref' | 'recursive-backref-alias'
 
 type DisplayMode = 'flat' | 'grouped'
 type DisplayGroupsMap = Record<PageDisplayItemType, PageDisplayItem[]>
@@ -822,6 +822,8 @@ interface GatheredData {
   referencingAliasBlocks: Block[]
   /** 子块引用别名块列表 */
   childReferencedAliasBlocks: Block[]
+  /** 子块引用标签别名块列表 */
+  childReferencedTagAliasBlocks: Block[]
   /** 反链中的别名块列表 */
   backrefAliasBlocks: Block[]
   /** 直接反链块列表 */
@@ -1120,7 +1122,7 @@ export class PageDisplay {
    */
   private initializeTypeFilters(): void {
     const allTypes: PageDisplayItemType[] = [
-      'tag', 'referenced', 'contained-in', 'inline-ref', 'property-ref', 'referencing-alias', 'child-referenced-alias', 
+      'tag', 'referenced-tag', 'referenced', 'property-ref', 'contained-in', 'inline-ref', 'referencing-alias', 'child-referenced-alias', 'child-referenced-tag-alias',
       'backref-alias-blocks', 'backref', 'recursive-backref', 'recursive-backref-alias'
     ]
     
@@ -1405,15 +1407,17 @@ export class PageDisplay {
     
     // 类型配置 - 重新组织为更紧凑的布局
     const typeConfigs = [
-      { type: 'tag', label: '包含于子标签', icon: 'ti-hash' },
       { type: 'referenced', label: '被引用', icon: 'ti-arrow-up' },
-      { type: 'contained-in', label: '包含于块', icon: 'ti-arrow-up' },
+      { type: 'referenced-tag', label: '被引用的标签块', icon: 'ti-hash' },
+      { type: 'contained-in', label: '包含于父块', icon: 'ti-arrow-up' },
+      { type: 'tag', label: '包含于子标签', icon: 'ti-hash' },
       { type: 'inline-ref', label: '内联引用', icon: 'ti-link' },
       { type: 'property-ref', label: '属性引用', icon: 'ti-align-box-center-stretch' },
       { type: 'referencing-alias', label: '直接引用别名', icon: 'ti-arrow-right' },
-      { type: 'child-referenced-alias', label: '页面子块别名', icon: 'ti-cube' },
-      { type: 'backref-alias-blocks', label: '反链别名', icon: 'ti-zoom-question' },
-      { type: 'backref', label: '直接反链', icon: 'ti-arrow-down' },
+        { type: 'child-referenced-alias', label: '页面子块内联别名', icon: 'ti-cube' },
+      { type: 'child-referenced-tag-alias', label: '页面子块标签别名', icon: 'ti-hash' },
+      { type: 'backref-alias-blocks', label: '递归直接反链别名块', icon: 'ti-zoom-question' },
+      { type: 'backref', label: '直接反链块', icon: 'ti-arrow-down' },
       { type: 'recursive-backref', label: '递归反链块', icon: 'ti-arrow-down-right' },
       { type: 'recursive-backref-alias', label: '递归反链别名', icon: 'ti-arrow-right' }
     ]
@@ -1671,12 +1675,14 @@ export class PageDisplay {
   private createEmptyGroups(): DisplayGroupsMap {
     return {
       tag: [],
+      'referenced-tag': [],
       referenced: [],
+      'property-ref': [],
       'contained-in': [],
       'inline-ref': [],
-      'property-ref': [],
       'referencing-alias': [],
       'child-referenced-alias': [],
+      'child-referenced-tag-alias': [],
       'backref-alias-blocks': [],
       'backref': [],
       'recursive-backref': [],
@@ -1693,7 +1699,7 @@ export class PageDisplay {
     const result = this.createEmptyGroups()
     const seen = new Set<string>()
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'contained-in', 'inline-ref', 'property-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'referenced', 'property-ref', 'contained-in', 'inline-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
     for (const type of groupTypes) {
       const groupItems = source[type] ?? []
       for (const item of groupItems) {
@@ -1744,7 +1750,7 @@ export class PageDisplay {
 
   private cloneGroupedItems(grouped: DisplayGroupsMap): DisplayGroupsMap {
     const clone = this.createEmptyGroups()
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'inline-ref', 'property-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'referenced', 'property-ref', 'contained-in', 'inline-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
     for (const type of groupTypes) {
       clone[type] = [...(grouped[type] ?? [])]
     }
@@ -2327,7 +2333,7 @@ export class PageDisplay {
     }
   }
 
-  // 获取子块中引用的块（当当前块不是别名块时）
+  // 获取子块中引用的别名块（只识别内联引用）
   private async getChildReferencedAliasBlocks(blockId: DbId, tagBlockIds: DbId[] = []): Promise<Block[]> {
     try {
       // 获取当前块的信息
@@ -2352,12 +2358,22 @@ export class PageDisplay {
       const childBlocks = await this.cachedApiCall("get-blocks", currentBlock.children)
       if (!childBlocks) return []
 
-      // 收集所有子块引用的块ID
+      // 收集所有子块引用的块ID，同时记录引用类型信息
       const allReferencedBlockIds: DbId[] = []
+      const refTypeMap: Map<DbId, any[]> = new Map() // 存储块ID对应的引用信息
+      
       for (const childBlock of childBlocks) {
         if (childBlock.refs && childBlock.refs.length > 0) {
-          const childReferencedIds = childBlock.refs.map((ref: any) => ref.to)
-          allReferencedBlockIds.push(...childReferencedIds)
+          for (const ref of childBlock.refs) {
+            const refTo = ref.to
+            allReferencedBlockIds.push(refTo)
+            
+            // 记录引用类型信息
+            if (!refTypeMap.has(refTo)) {
+              refTypeMap.set(refTo, [])
+            }
+            refTypeMap.get(refTo)!.push(ref)
+          }
         }
       }
 
@@ -2372,25 +2388,135 @@ export class PageDisplay {
       const referencedBlocks = await this.cachedApiCall("get-blocks", uniqueReferencedIds)
       if (!referencedBlocks) return []
 
-      // 过滤出被引用的块，排除标签块和自身块
+      // 过滤出被引用的块，排除标签块、属性值别名块和自身块
       const childReferencedBlocks: Block[] = []
+      this.log(`PageDisplay: 开始过滤子块引用的别名块，总共 ${referencedBlocks.length} 个块`)
+      
       for (const block of referencedBlocks) {
         // 排除自身块
         if (block.id === blockId) {
+          this.log(`PageDisplay: 排除自身块 - ${block.id}`)
           continue
         }
         
         // 检查是否为标签块
         const isTagBlock = tagBlockIds.includes(block.id)
-        if (!isTagBlock) {
-          childReferencedBlocks.push(block)
-        } else {
+        if (isTagBlock) {
+          this.log(`PageDisplay: 排除标签块 - ${block.id}: ${block.aliases?.[0] || block.text}`)
+          continue
         }
+        
+        // 检查是否为内联引用（只保留内联引用）
+        const refsForThisBlock = refTypeMap.get(block.id) || []
+        this.log(`PageDisplay: 检查块 ${block.id} 的引用类型:`, refsForThisBlock)
+        
+        const isInlineRef = this.isInlineReference(refsForThisBlock)
+        if (!isInlineRef) {
+          this.log(`PageDisplay: 排除非内联引用 - ${block.id}: ${block.aliases?.[0] || block.text}`)
+          continue
+        }
+        
+        // 通过 refs 类型判断是否为属性值别名块
+        const isPropertyValueRef = this.isPropertyValueRef(refsForThisBlock)
+        if (isPropertyValueRef) {
+          this.log(`PageDisplay: 通过refs类型排除属性值别名块 - ${block.id}: ${block.aliases?.[0] || block.text}`)
+          continue
+        }
+        
+        // 备用检查：通过块属性判断是否为属性值的别名块
+        const isPropertyValueAlias = this.isPropertyValueAliasBlock(block)
+        if (isPropertyValueAlias) {
+          this.log(`PageDisplay: 通过块属性排除属性值别名块 - ${block.id}: ${block.aliases?.[0] || block.text}`)
+          continue
+        }
+        
+        this.log(`PageDisplay: 保留子块引用的别名块 - ${block.id}: ${block.aliases?.[0] || block.text}`)
+        childReferencedBlocks.push(block)
       }
 
       return childReferencedBlocks
     } catch (error) {
       this.logError("Failed to get child referenced alias blocks:", error)
+      return []
+    }
+  }
+
+  // 获取子块中引用的标签别名块
+  private async getChildReferencedTagAliasBlocks(blockId: DbId, tagBlockIds: DbId[] = []): Promise<Block[]> {
+    try {
+      // 获取当前块的信息
+      const currentBlock = await this.getBlockInfo(blockId)
+      if (!currentBlock) {
+        return []
+      }
+
+      // 检查当前块是否有子块
+      if (!currentBlock.children || currentBlock.children.length === 0) {
+        return []
+      }
+
+      // 获取所有子块的详细信息
+      const childBlocks = await this.cachedApiCall("get-blocks", currentBlock.children)
+      if (!childBlocks) return []
+
+      // 收集所有子块引用的块ID，同时记录引用类型信息
+      const allReferencedBlockIds: DbId[] = []
+      const refTypeMap: Map<DbId, any[]> = new Map() // 存储块ID对应的引用信息
+      
+      for (const childBlock of childBlocks) {
+        if (childBlock.refs && childBlock.refs.length > 0) {
+          for (const ref of childBlock.refs) {
+            const refTo = ref.to
+            allReferencedBlockIds.push(refTo)
+            
+            // 记录引用类型信息
+            if (!refTypeMap.has(refTo)) {
+              refTypeMap.set(refTo, [])
+            }
+            refTypeMap.get(refTo)!.push(ref)
+          }
+        }
+      }
+
+      if (allReferencedBlockIds.length === 0) {
+        return []
+      }
+
+      // 去重
+      const uniqueReferencedIds = [...new Set(allReferencedBlockIds)]
+
+      // 批量获取被引用块的详细信息
+      const referencedBlocks = await this.cachedApiCall("get-blocks", uniqueReferencedIds)
+      if (!referencedBlocks) return []
+
+      // 过滤出被引用的标签块
+      const childReferencedTagBlocks: Block[] = []
+      this.log(`PageDisplay: 开始过滤子块引用的标签别名块，总共 ${referencedBlocks.length} 个块`)
+      
+      for (const block of referencedBlocks) {
+        // 排除自身块
+        if (block.id === blockId) {
+          this.log(`PageDisplay: 排除自身块 - ${block.id}`)
+          continue
+        }
+        
+        // 检查这个块是否被标签引用（ref.type = 2）
+        const refsForThisBlock = refTypeMap.get(block.id) || []
+        this.log(`PageDisplay: 检查块 ${block.id} 的引用类型:`, refsForThisBlock)
+        
+        const isTagReference = this.isTagReference(refsForThisBlock)
+        if (!isTagReference) {
+          this.log(`PageDisplay: 排除非标签引用 - ${block.id}: ${block.aliases?.[0] || block.text}`)
+          continue
+        }
+        
+        this.log(`PageDisplay: 保留子块引用的标签别名块 - ${block.id}: ${block.aliases?.[0] || block.text}`)
+        childReferencedTagBlocks.push(block)
+      }
+
+      return childReferencedTagBlocks
+    } catch (error) {
+      this.logError("Failed to get child referenced tag alias blocks:", error)
       return []
     }
   }
@@ -2489,6 +2615,15 @@ export class PageDisplay {
           else if (ref.alias) {
             isInlineRef = true
           }
+          // 明确识别标签引用：type = 2
+          else if (ref.type === 2) {
+            this.log(`PageDisplay: 识别为标签引用 - ref.to: ${ref.to}, type: ${ref.type}`)
+            isInlineRef = false
+            // 标签引用需要特殊处理，添加到标签块ID列表中
+            if (!tagBlockIds.includes(ref.to)) {
+              tagBlockIds.push(ref.to)
+            }
+          }
           // 明确识别内联引用：在标签块ID中
           else if (tagBlockIds.includes(ref.to)) {
             isInlineRef = true
@@ -2503,7 +2638,7 @@ export class PageDisplay {
             }
           }
           // 其他情况：根据 type 值判断
-          else if (ref.type !== undefined && ref.type > 0) {
+          else if (ref.type !== undefined && ref.type > 2) {
             this.log(`PageDisplay: 根据type值识别为属性引用 - ref.to: ${ref.to}, type: ${ref.type}`)
             isInlineRef = false
           }
@@ -2512,7 +2647,10 @@ export class PageDisplay {
             isInlineRef = true
           }
           
-          if (isInlineRef) {
+          if (ref.type === 2) {
+            // 标签引用不添加到任何引用列表中，因为已经在上面添加到tagBlockIds中
+            this.log(`PageDisplay: 标签引用已处理 - ref.to: ${ref.to}`)
+          } else if (isInlineRef) {
             inlineRefs.push(ref)
             inlineRefIds.push(ref.to)
           } else {
@@ -2588,6 +2726,174 @@ export class PageDisplay {
     })
     
     return hasTagProperty
+  }
+
+  /**
+   * 检查引用是否为内联引用
+   * 通过 refs 的类型信息来判断是否为内联引用
+   * @param refs 引用信息数组
+   * @returns 是否为内联引用
+   */
+  private isInlineReference(refs: any[]): boolean {
+    if (!refs || refs.length === 0) {
+      return false
+    }
+    
+    this.log("PageDisplay: 检查引用类型，refs:", refs)
+    
+    // 检查是否有内联引用的特征
+    for (const ref of refs) {
+      this.log("PageDisplay: 检查单个引用:", ref)
+      
+      // 检查 type 值（内联引用的 type 通常是 0 或 1）
+      if (ref.type === 0 || ref.type === 1) {
+        this.log("PageDisplay: 通过type值识别为内联引用", ref.to, { type: ref.type })
+        return true
+      }
+      
+      // 检查是否有 alias 属性（内联引用通常有 alias）
+      if (ref.alias) {
+        this.log("PageDisplay: 通过alias属性识别为内联引用", ref.to)
+        return true
+      }
+      
+      // 如果没有明确的属性值引用特征，则认为是内联引用
+      // 检查是否有属性值引用的特征
+      const hasData = ref.data && ref.data.length > 0
+      const hasPropertyValueType = ref.type !== undefined && ref.type > 1
+      const hasPropertyValueFlag = ref.propertyValue || ref.isPropertyValue
+      
+      if (!hasData && !hasPropertyValueType && !hasPropertyValueFlag) {
+        this.log("PageDisplay: 没有属性值引用特征，认为是内联引用", ref.to, { type: ref.type, hasData, hasPropertyValueType, hasPropertyValueFlag })
+        return true
+      }
+    }
+    
+    this.log("PageDisplay: 所有引用都不符合内联引用条件")
+    return false
+  }
+
+  /**
+   * 检查引用是否为属性值引用
+   * 通过 refs 的类型信息来判断是否为属性值引用
+   * @param refs 引用信息数组
+   * @returns 是否为属性值引用
+   */
+  private isPropertyValueRef(refs: any[]): boolean {
+    if (!refs || refs.length === 0) {
+      return false
+    }
+    
+    this.log("PageDisplay: 检查是否为属性值引用，refs:", refs)
+    
+    // 检查是否有属性值引用的特征
+    for (const ref of refs) {
+      this.log("PageDisplay: 检查单个引用是否为属性值引用:", ref)
+      
+      // 检查是否有 data 属性（属性引用通常有 data 属性）
+      if (ref.data && ref.data.length > 0) {
+        this.log("PageDisplay: 通过data属性识别为属性值引用", ref.to, { data: ref.data })
+        return true
+      }
+      
+      // 检查 type 值（属性引用的 type 通常大于 1，因为 0 和 1 是内联引用）
+      if (ref.type !== undefined && ref.type > 1) {
+        this.log("PageDisplay: 通过type值识别为属性值引用", ref.to, { type: ref.type })
+        return true
+      }
+      
+      // 检查是否有特定的属性值引用标记
+      if (ref.propertyValue || ref.isPropertyValue) {
+        this.log("PageDisplay: 通过标记识别为属性值引用", ref.to)
+        return true
+      }
+    }
+    
+    this.log("PageDisplay: 不是属性值引用")
+    return false
+  }
+
+  /**
+   * 检查引用是否为标签引用
+   * 通过 refs 的类型信息来判断是否为标签引用
+   * @param refs 引用信息数组
+   * @returns 是否为标签引用
+   */
+  private isTagReference(refs: any[]): boolean {
+    if (!refs || refs.length === 0) {
+      return false
+    }
+    
+    this.log("PageDisplay: 检查是否为标签引用，refs:", refs)
+    
+    // 检查是否有标签引用的特征
+    for (const ref of refs) {
+      this.log("PageDisplay: 检查单个引用是否为标签引用:", ref)
+      
+      // 检查 type 值（标签引用的 type 是 2）
+      if (ref.type === 2) {
+        this.log("PageDisplay: 通过type=2识别为标签引用", ref.to, { type: ref.type })
+        return true
+      }
+    }
+    
+    this.log("PageDisplay: 不是标签引用")
+    return false
+  }
+
+  /**
+   * 检查块是否是属性值的别名块
+   * 属性值的别名块通常有特定的属性特征，如属性值相关的属性
+   * @param block 要检查的块
+   * @returns 是否为属性值的别名块
+   */
+  private isPropertyValueAliasBlock(block: Block): boolean {
+    // 检查是否有属性
+    if (!block.properties || block.properties.length === 0) {
+      return false
+    }
+    
+    // 检查是否有属性值相关的属性
+    // 属性值的别名块通常有特定的属性名称模式
+    const propertyValuePatterns = [
+      'value', 'values', 'property-value', 'prop-value',
+      'attribute-value', 'attr-value', 'data-value'
+    ]
+    
+    const hasPropertyValueAttribute = block.properties.some(prop => 
+      propertyValuePatterns.some(pattern => 
+        prop.name.toLowerCase().includes(pattern.toLowerCase())
+      )
+    )
+    
+    if (hasPropertyValueAttribute) {
+      this.log("PageDisplay: 识别为属性值别名块", block.id, {
+        properties: block.properties.map(p => ({ name: p.name, value: p.value }))
+      })
+      return true
+    }
+    
+    // 检查是否有特定的属性值内容模式
+    // 属性值的别名块可能有特定的文本内容模式
+    const textContent = block.text || ''
+    const aliasContent = block.aliases?.[0] || ''
+    const contentToCheck = textContent || aliasContent
+    
+    // 检查是否包含属性值相关的关键词
+    const propertyValueKeywords = ['值', 'value', '属性值', 'property value']
+    const hasPropertyValueKeywords = propertyValueKeywords.some(keyword =>
+      contentToCheck.toLowerCase().includes(keyword.toLowerCase())
+    )
+    
+    if (hasPropertyValueKeywords) {
+      this.log("PageDisplay: 通过关键词识别为属性值别名块", block.id, {
+        text: textContent,
+        alias: aliasContent
+      })
+      return true
+    }
+    
+    return false
   }
 
 
@@ -3085,23 +3391,27 @@ export class PageDisplay {
       return cachedData
     }
     
+    // 先获取被引用块结果，以便获取标签块ID列表
+    const referencedResult = await this.getReferencedBlocks(rootBlockId)
+    const { tagBlockIds } = referencedResult
+
     // 并行加载所有数据，根据设置决定是否执行反链别名块查询
     const [
       childrenTags,
-      referencedResult,
       containedInBlockIds,
       referencingAliasBlocks,
       childReferencedAliasBlocks,
+      childReferencedTagAliasBlocks,
       backrefAliasBlocks,
       backrefBlocks,
       recursiveBackrefBlocks,
       recursiveBackrefAliasBlocks
     ] = await Promise.all([
       this.getChildrenTags(rootBlockId),
-      this.getReferencedBlocks(rootBlockId),
       this.getContainedInBlocks(),
       this.getReferencingAliasBlocks(rootBlockId),
-      this.getChildReferencedAliasBlocks(rootBlockId, []),
+      this.getChildReferencedAliasBlocks(rootBlockId, tagBlockIds),
+      this.getChildReferencedTagAliasBlocks(rootBlockId, tagBlockIds),
       this.backrefAliasQueryEnabled ? this.getBackrefAliasBlocks(rootBlockId) : Promise.resolve([]),
       this.getBackrefBlocks(rootBlockId),
       this.getRecursiveBackrefBlocks(rootBlockId),
@@ -3114,6 +3424,7 @@ export class PageDisplay {
       containedInBlockIds,
       referencingAliasBlocks,
       childReferencedAliasBlocks,
+      childReferencedTagAliasBlocks,
       backrefAliasBlocks,
       backrefBlocks,
       recursiveBackrefBlocks,
@@ -3152,7 +3463,7 @@ export class PageDisplay {
    * 处理数据并转换为显示项目（优化版）
    */
   private async processDataToItems(data: GatheredData): Promise<ProcessedItemsResult> {
-    const { childrenTags, referencedResult, containedInBlockIds, referencingAliasBlocks, childReferencedAliasBlocks, backrefAliasBlocks, backrefBlocks, recursiveBackrefBlocks, recursiveBackrefAliasBlocks } = data
+    const { childrenTags, referencedResult, containedInBlockIds, referencingAliasBlocks, childReferencedAliasBlocks, childReferencedTagAliasBlocks, backrefAliasBlocks, backrefBlocks, recursiveBackrefBlocks, recursiveBackrefAliasBlocks } = data
     const { blocks: referencedBlocks, tagBlockIds, inlineRefIds, propertyRefIds } = referencedResult
 
     const promises = [] as Promise<PageDisplayItem[]>[]
@@ -3162,14 +3473,15 @@ export class PageDisplay {
     promises.push(containedInBlockIds?.length ? this.processContainedInItems(containedInBlockIds) : Promise.resolve([]))
     promises.push(referencingAliasBlocks?.length ? this.processReferencingAliasItems(referencingAliasBlocks) : Promise.resolve([]))
     promises.push(childReferencedAliasBlocks?.length ? this.processChildReferencedAliasItems(childReferencedAliasBlocks) : Promise.resolve([]))
+    promises.push(childReferencedTagAliasBlocks?.length ? this.processChildReferencedTagAliasItems(childReferencedTagAliasBlocks) : Promise.resolve([]))
     promises.push(backrefAliasBlocks?.length ? this.processBackrefAliasItems(backrefAliasBlocks) : Promise.resolve([]))
     promises.push(backrefBlocks?.length ? this.processBackrefItems(backrefBlocks) : Promise.resolve([]))
     promises.push(recursiveBackrefBlocks?.length ? this.processRecursiveBackrefItems(recursiveBackrefBlocks) : Promise.resolve([]))
     promises.push(recursiveBackrefAliasBlocks?.length ? this.processRecursiveBackrefAliasItems(recursiveBackrefAliasBlocks) : Promise.resolve([]))
 
-    const [tagItems, referencedItems, containedInItems, referencingAliasItems, childReferencedAliasItems, backrefAliasItems, backrefItems, recursiveBackrefItems, recursiveBackrefAliasItems] = await Promise.all(promises)
+    const [tagItems, referencedItems, containedInItems, referencingAliasItems, childReferencedAliasItems, childReferencedTagAliasItems, backrefAliasItems, backrefItems, recursiveBackrefItems, recursiveBackrefAliasItems] = await Promise.all(promises)
 
-    this.log(`PageDisplay: 数据处理完成 - tagItems: ${tagItems.length}, referencedItems: ${referencedItems.length}, containedInItems: ${containedInItems.length}, referencingAliasItems: ${referencingAliasItems.length}, childReferencedAliasItems: ${childReferencedAliasItems.length}, backrefAliasItems: ${backrefAliasItems.length}, backrefItems: ${backrefItems.length}, recursiveBackrefItems: ${recursiveBackrefItems.length}, recursiveBackrefAliasItems: ${recursiveBackrefAliasItems.length}`)
+    this.log(`PageDisplay: 数据处理完成 - tagItems: ${tagItems.length}, referencedItems: ${referencedItems.length}, containedInItems: ${containedInItems.length}, referencingAliasItems: ${referencingAliasItems.length}, childReferencedAliasItems: ${childReferencedAliasItems.length}, childReferencedTagAliasItems: ${childReferencedTagAliasItems.length}, backrefAliasItems: ${backrefAliasItems.length}, backrefItems: ${backrefItems.length}, recursiveBackrefItems: ${recursiveBackrefItems.length}, recursiveBackrefAliasItems: ${recursiveBackrefAliasItems.length}`)
 
     // 将referencedItems按类型分开
     const referencedItemsByType = referencedItems.reduce((acc, item) => {
@@ -3181,13 +3493,15 @@ export class PageDisplay {
     }, {} as Record<PageDisplayItemType, PageDisplayItem[]>)
 
     const groupSource: Record<PageDisplayItemType, PageDisplayItem[]> = {
-      tag: tagItems,
+      tag: tagItems, // 只包含子标签
+      'referenced-tag': referencedItemsByType['referenced-tag'] || [], // 被引用的标签块
       referenced: referencedItemsByType['referenced'] || [],
+      'property-ref': referencedItemsByType['property-ref'] || [], // 属性引用块
       'contained-in': containedInItems,
       'inline-ref': referencedItemsByType['inline-ref'] || [],
-      'property-ref': referencedItemsByType['property-ref'] || [],
       'referencing-alias': referencingAliasItems,
       'child-referenced-alias': childReferencedAliasItems,
+      'child-referenced-tag-alias': childReferencedTagAliasItems,
       'backref-alias-blocks': backrefAliasItems,
       'backref': backrefItems,
       'recursive-backref': recursiveBackrefItems,
@@ -3197,7 +3511,7 @@ export class PageDisplay {
     const groupedItems = this.buildGroupedItems(groupSource, tagBlockIds, containedInBlockIds)
     const uniqueItems: PageDisplayItem[] = []
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced', 'contained-in', 'inline-ref', 'property-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'referenced', 'property-ref', 'contained-in', 'inline-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
     for (const type of groupTypes) {
       uniqueItems.push(...groupedItems[type])
     }
@@ -3261,15 +3575,20 @@ export class PageDisplay {
         // 根据引用类型确定itemType
         let itemType: PageDisplayItemType = 'referenced'
         if (isTagBlock) {
-          itemType = 'tag' // 标签块
+          itemType = 'referenced-tag' // 被引用的标签块
         } else if (isContainedIn) {
-          itemType = 'referenced' // 包含于块保持为referenced
+          // 包含于块现在由 processContainedInItems 单独处理，这里跳过
+          this.log(`PageDisplay: skipping contained-in block in referenced processing: ${block.id}`)
+          continue
         } else if (isInlineRef) {
           itemType = 'inline-ref' // 内联引用
         } else if (isPropertyRef) {
-          itemType = 'property-ref' // 属性引用
+          // 属性引用块单独分类
+          itemType = 'property-ref' // 属性引用块
+          this.log(`PageDisplay: 设置为属性引用块 (property-ref) - ${block.id}: ${displayText}`)
         } else {
           itemType = 'referenced' // 默认情况
+          this.log(`PageDisplay: 设置为普通被引用块 (referenced) - ${block.id}: ${displayText}`)
         }
         
         const enhancedItem = await this.createPageDisplayItem(block, itemType, displayText)
@@ -3347,6 +3666,31 @@ export class PageDisplay {
     }
     
     return referencingAliasItems
+  }
+
+  /**
+   * 处理子块引用标签别名项目
+   */
+  private async processChildReferencedTagAliasItems(childReferencedTagAliasBlocks: Block[]): Promise<PageDisplayItem[]> {
+    const childReferencedTagAliasItems: PageDisplayItem[] = []
+    
+    for (const block of childReferencedTagAliasBlocks) {
+      this.log("PageDisplay: processing child referenced tag alias block", block)
+      
+      // 检查是否有名称或别名
+      const hasName = (block.aliases && block.aliases.length > 0) || block.text
+      if (hasName) {
+        const displayText = (block.aliases && block.aliases[0]) || block.text || `子块标签别名 ${block.id}`
+        const enhancedItem = await this.createPageDisplayItem(block, 'child-referenced-tag-alias', displayText)
+        childReferencedTagAliasItems.push(enhancedItem)
+        
+        this.log("PageDisplay: added child referenced tag alias item", { id: block.id, text: displayText })
+      } else {
+        this.log("PageDisplay: skipping child referenced tag alias block (no name/aliases)", block)
+      }
+    }
+    
+    return childReferencedTagAliasItems
   }
 
   /**
@@ -4240,10 +4584,18 @@ export class PageDisplay {
               // 标签图标
               this.log(`PageDisplay: 分配标签图标 (ti-hash) - ${item.text}`)
               icon.className = 'page-display-item-icon ti ti-hash'
+            } else if (item.itemType === 'referenced-tag') {
+              // 被引用的标签块图标
+              this.log(`PageDisplay: 分配被引用标签块图标 (ti-hash) - ${item.text}`)
+              icon.className = 'page-display-item-icon ti ti-hash'
             } else if (item.itemType === 'referenced') {
               // 被引用块图标（当前块引用了这个块）
               this.log(`PageDisplay: 分配上箭头图标 (ti-arrow-up) - ${item.text}`)
               icon.className = 'page-display-item-icon ti ti-arrow-up'
+            } else if (item.itemType === 'property-ref') {
+              // 属性引用块图标
+              this.log(`PageDisplay: 分配对齐图标 (ti-align-box-center-stretch) - ${item.text}`)
+              icon.className = 'page-display-item-icon ti ti-align-box-center-stretch'
             } else if (item.itemType === 'contained-in') {
               // 包含于块图标（当前块被包含在这个块中）
               this.log(`PageDisplay: 分配包含于块图标 (ti-arrow-up) - ${item.text}`)
@@ -4252,10 +4604,6 @@ export class PageDisplay {
               // 内联引用块图标
               this.log(`PageDisplay: 分配链接图标 (ti-link) - ${item.text}`)
               icon.className = 'page-display-item-icon ti ti-link'
-            } else if (item.itemType === 'property-ref') {
-              // 属性引用块图标
-              this.log(`PageDisplay: 分配对齐图标 (ti-align-box-center-stretch) - ${item.text}`)
-              icon.className = 'page-display-item-icon ti ti-align-box-center-stretch'
             } else if (item.itemType === 'referencing-alias') {
               // 引用别名块图标
               this.log(`PageDisplay: 分配右箭头图标 (ti-arrow-right) - ${item.text}`)
@@ -4264,6 +4612,10 @@ export class PageDisplay {
               // 子块引用块图标
               this.log(`PageDisplay: 分配立方体图标 (ti-cube) - ${item.text}`)
               icon.className = 'page-display-item-icon ti ti-cube'
+            } else if (item.itemType === 'child-referenced-tag-alias') {
+              // 子块引用标签别名图标
+              this.log(`PageDisplay: 分配标签图标 (ti-hash) - ${item.text}`)
+              icon.className = 'page-display-item-icon ti ti-hash'
             } else if (item.itemType === 'backref-alias-blocks') {
               // 反链中的别名块图标
               this.log(`PageDisplay: 分配问号放大镜图标 (ti-zoom-question) - ${item.text}`)
