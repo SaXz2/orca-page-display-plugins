@@ -587,11 +587,12 @@ class StyleManager {
         
       case 'page-display-highlight':
         element.style.cssText = `
-          background-color: ${colors.highlightBg};
-          color: ${colors.highlightText};
+          background-color: ${colors.highlightBg} !important;
+          color: ${colors.highlightText} !important;
           padding: 1px 2px;
           border-radius: 2px;
           font-weight: 500;
+          display: inline;
         `
         break
         
@@ -945,14 +946,14 @@ export class PageDisplay {
    */
   constructor(pluginName: string) {
     this.pluginName = pluginName
-    this.logger = new Logger(false)
+    this.logger = new Logger(true) // 启用调试模式
     this.styleManager = new StyleManager()
     this.apiService = new ApiService(this.logger)
     this.errorHandler = new ErrorHandler(this.logger, this.maxRetries)
     // 加载用户设置
     this.settingsReady = this.loadSettings()
-    // 调试模式默认关闭
-    this.debugMode = false
+    // 调试模式默认开启
+    this.debugMode = true
     
     // 初始化类型过滤状态，默认所有类型都显示
     this.initializeTypeFilters()
@@ -1829,45 +1830,124 @@ const typeConfigs = [
       return this.escapeHtml(text)
     }
 
-    let highlightedText = this.escapeHtml(text)
+    // 强制显示调试信息
+    console.log(`[PageDisplay] 开始高亮处理 - 原文: "${text}", 关键词: [${keywords.join(', ')}]`)
+    this.log(`开始高亮处理 - 原文: "${text}", 关键词: [${keywords.join(', ')}]`)
+
+    // 收集所有需要高亮的范围
+    const highlightRanges: Array<{start: number, end: number, type: 'text' | 'pinyin'}> = []
     
-    // 对每个关键词进行高亮处理
+    // 对每个关键词进行处理
     keywords.forEach(keyword => {
       if (keyword.trim()) {
-        const escapedKeyword = this.escapeHtml(keyword.trim())
+        const lowerText = text.toLowerCase()
+        const lowerKeyword = keyword.toLowerCase()
         
-        // 普通文本高亮
-        const regex = new RegExp(`(${escapedKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
-        highlightedText = highlightedText.replace(regex, '<mark class="page-display-highlight">$1</mark>')
+        this.log(`处理关键词: "${keyword}"`)
         
-        // 拼音高亮 - 使用更简单的方法
+        // 普通文本匹配
+        let index = 0
+        while ((index = lowerText.indexOf(lowerKeyword, index)) !== -1) {
+          highlightRanges.push({
+            start: index,
+            end: index + keyword.length,
+            type: 'text'
+          })
+          this.log(`文本匹配: "${keyword}" 在位置 ${index}-${index + keyword.length}`)
+          index += keyword.length
+        }
+        
+        // 拼音匹配 - 改进的拼音搜索逻辑
         try {
           const pinyinRanges = this.getPinyinMatchRanges(text, keyword)
           if (pinyinRanges.length > 0) {
-            // 从后往前处理，避免位置偏移
-            pinyinRanges.sort((a, b) => b.start - a.start)
-            
-            pinyinRanges.forEach(range => {
-              const start = range.start
-              const end = range.end
-              const matchedText = text.substring(start, end)
-              const escapedMatchedText = this.escapeHtml(matchedText)
-              
-              // 简单检查是否已经被高亮过
-              if (!highlightedText.includes(`<mark class="page-display-highlight">${escapedMatchedText}</mark>`)) {
-                // 使用简单的字符串替换，避免复杂的正则表达式
-                const escapedMatchedTextRegex = new RegExp(`(${escapedMatchedText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'g')
-                highlightedText = highlightedText.replace(escapedMatchedTextRegex, '<mark class="page-display-highlight">$1</mark>')
-              }
-            })
+            this.log(`拼音匹配找到 ${pinyinRanges.length} 个范围:`, pinyinRanges)
           }
+          
+          pinyinRanges.forEach(range => {
+            // 检查是否与已有的文本匹配范围重叠
+            const hasOverlap = highlightRanges.some(existing => 
+              (range.start < existing.end && range.end > existing.start)
+            )
+            
+            if (!hasOverlap) {
+              highlightRanges.push({
+                start: range.start,
+                end: range.end,
+                type: 'pinyin'
+              })
+              this.log(`拼音匹配: "${keyword}" 在位置 ${range.start}-${range.end}`)
+            } else {
+              this.log(`拼音匹配与文本匹配重叠，跳过: ${range.start}-${range.end}`)
+            }
+          })
         } catch (error) {
-          this.logError("拼音高亮失败:", error)
+          this.logError("拼音匹配失败:", error)
         }
       }
     })
     
-    return highlightedText
+    this.log(`高亮范围总数: ${highlightRanges.length}`, highlightRanges)
+    
+    // 合并重叠的范围
+    const mergedRanges = this.mergeHighlightRanges(highlightRanges)
+    this.log(`合并后范围: ${mergedRanges.length}`, mergedRanges)
+    
+    // 从后往前应用高亮，避免位置偏移
+    let result = text
+    mergedRanges.sort((a, b) => b.start - a.start)
+    
+    mergedRanges.forEach(range => {
+      const before = result.substring(0, range.start)
+      const matched = result.substring(range.start, range.end)
+      const after = result.substring(range.end)
+      
+      this.log(`应用高亮: "${matched}" 在位置 ${range.start}-${range.end}`)
+      
+      // 不需要转义匹配的文本，因为我们要返回HTML
+      const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+      const highlightBg = isDarkMode ? '#ffd700' : '#ffeb3b'
+      const highlightText = '#000000'
+      result = before + `<mark class="page-display-highlight" style="background-color: ${highlightBg} !important; color: ${highlightText} !important; padding: 1px 2px; border-radius: 2px; font-weight: 500; display: inline;">${matched}</mark>` + after
+    })
+    
+    // 强制显示最终结果
+    console.log(`[PageDisplay] 最终高亮结果: "${result}"`)
+    this.log(`最终高亮结果: "${result}"`)
+    return result
+  }
+
+  /**
+   * 合并重叠的高亮范围
+   * @param ranges 高亮范围数组
+   * @returns 合并后的范围数组
+   */
+  private mergeHighlightRanges(ranges: Array<{start: number, end: number, type: 'text' | 'pinyin'}>): Array<{start: number, end: number}> {
+    if (ranges.length === 0) return []
+    
+    // 按起始位置排序
+    ranges.sort((a, b) => a.start - b.start)
+    
+    const merged: Array<{start: number, end: number}> = []
+    let current = ranges[0]
+    
+    for (let i = 1; i < ranges.length; i++) {
+      const next = ranges[i]
+      
+      // 如果当前范围与下一个范围重叠或相邻，合并它们
+      if (next.start <= current.end) {
+        current.end = Math.max(current.end, next.end)
+      } else {
+        // 不重叠，添加当前范围并开始新的范围
+        merged.push({ start: current.start, end: current.end })
+        current = next
+      }
+    }
+    
+    // 添加最后一个范围
+    merged.push({ start: current.start, end: current.end })
+    
+    return merged
   }
 
   /**
@@ -1897,7 +1977,7 @@ const typeConfigs = [
   }
 
   /**
-   * 获取文本中匹配拼音的字符范围
+   * 获取文本中匹配拼音的字符范围（改进版）
    * @param text 要检查的文本
    * @param pinyinQuery 拼音查询字符串
    * @returns 匹配的字符位置数组
@@ -1915,20 +1995,205 @@ const typeConfigs = [
       
       // 使用pinyin-match库获取匹配范围
       const match = pinyinMatch.match(text, pinyinQuery)
-      if (match !== false && Array.isArray(match) && match.length > 0) {
-        return match.map((range: any) => ({
-          start: range[0],
-          end: range[1]
-        }))
+      this.log(`拼音匹配调试 - 文本: "${text}", 查询: "${pinyinQuery}", 结果:`, match)
+      
+      if (match !== false) {
+        this.log(`pinyin-match返回结果类型: ${typeof match}, 内容:`, match)
+        
+        // pinyin-match返回的是匹配的文本片段数组
+        if (Array.isArray(match) && match.length > 0) {
+          const ranges: Array<{start: number, end: number}> = []
+          const processedTexts = new Set<string>() // 避免重复处理相同的文本
+          
+          match.forEach((matchedText: any) => {
+            this.log(`处理匹配项: ${typeof matchedText}, 内容:`, matchedText)
+            
+            if (typeof matchedText === 'string' && !processedTexts.has(matchedText)) {
+              processedTexts.add(matchedText)
+              
+              // 在原文中查找匹配文本的位置
+              let index = 0
+              while ((index = text.indexOf(matchedText, index)) !== -1) {
+                ranges.push({
+                  start: index,
+                  end: index + matchedText.length
+                })
+                this.log(`找到匹配文本: "${matchedText}" 在位置 ${index}-${index + matchedText.length}`)
+                index += matchedText.length
+              }
+            } else if (typeof matchedText === 'number') {
+              // 处理数字类型的匹配结果（可能是位置信息）
+              this.log(`处理数字匹配项: ${matchedText}`)
+              // 如果是位置信息，尝试直接使用
+              if (matchedText >= 0 && matchedText < text.length) {
+                ranges.push({
+                  start: matchedText,
+                  end: matchedText + 1
+                })
+                this.log(`数字匹配: 位置 ${matchedText}`)
+              }
+            }
+          })
+          
+          this.log(`拼音匹配范围:`, ranges)
+          return ranges
+        } else if (typeof match === 'string') {
+          // 如果返回的是字符串，直接查找
+          const ranges: Array<{start: number, end: number}> = []
+          const matchStr = match as string
+          let index = 0
+          while ((index = text.indexOf(matchStr, index)) !== -1) {
+            ranges.push({
+              start: index,
+              end: index + matchStr.length
+            })
+            this.log(`找到匹配文本: "${matchStr}" 在位置 ${index}-${index + matchStr.length}`)
+            index += matchStr.length
+          }
+          return ranges
+        }
       }
       
-      return []
+      // 如果pinyin-match没有找到匹配，尝试更宽松的匹配策略
+      this.log(`pinyin-match未找到匹配，尝试宽松匹配策略`)
+      return this.getLoosePinyinMatchRanges(text, pinyinQuery)
     } catch (error) {
       this.logError("获取拼音匹配范围失败:", error)
       return []
     }
   }
 
+  /**
+   * 宽松的拼音匹配策略
+   * 当pinyin-match库无法找到精确匹配时，使用更宽松的匹配策略
+   * @param text 要检查的文本
+   * @param pinyinQuery 拼音查询字符串
+   * @returns 匹配的字符位置数组
+   */
+  private getLoosePinyinMatchRanges(text: string, pinyinQuery: string): Array<{start: number, end: number}> {
+    if (!text || !pinyinQuery) {
+      return []
+    }
+
+    try {
+      // 移除空格，将查询转换为连续拼音
+      const cleanQuery = pinyinQuery.replace(/\s+/g, '').toLowerCase()
+      this.log(`宽松拼音匹配 - 文本: "${text}", 清理后查询: "${cleanQuery}"`)
+      
+      // 尝试不同的匹配策略
+      const strategies = [
+        // 策略1: 直接使用清理后的查询
+        () => this.tryPinyinMatch(text, cleanQuery),
+        // 策略2: 尝试部分匹配
+        () => this.tryPartialPinyinMatch(text, cleanQuery),
+        // 策略3: 尝试字符级匹配
+        () => this.tryCharacterPinyinMatch(text, cleanQuery)
+      ]
+      
+      for (const strategy of strategies) {
+        const ranges = strategy()
+        if (ranges.length > 0) {
+          this.log(`宽松匹配成功，找到 ${ranges.length} 个范围:`, ranges)
+          return ranges
+        }
+      }
+      
+      this.log(`所有宽松匹配策略都失败`)
+      return []
+    } catch (error) {
+      this.logError("宽松拼音匹配失败:", error)
+      return []
+    }
+  }
+
+  /**
+   * 尝试拼音匹配
+   */
+  private tryPinyinMatch(text: string, query: string): Array<{start: number, end: number}> {
+    try {
+      const match = pinyinMatch.match(text, query)
+      if (match !== false) {
+        return this.convertMatchToRanges(text, match)
+      }
+    } catch (error) {
+      this.log(`tryPinyinMatch失败:`, error)
+    }
+    return []
+  }
+
+  /**
+   * 尝试部分拼音匹配
+   */
+  private tryPartialPinyinMatch(text: string, query: string): Array<{start: number, end: number}> {
+    // 如果查询长度大于2，尝试截取前几个字符进行匹配
+    if (query.length > 2) {
+      const partialQuery = query.substring(0, Math.max(2, query.length - 1))
+      this.log(`尝试部分匹配: "${partialQuery}"`)
+      return this.tryPinyinMatch(text, partialQuery)
+    }
+    return []
+  }
+
+  /**
+   * 尝试字符级拼音匹配
+   */
+  private tryCharacterPinyinMatch(text: string, query: string): Array<{start: number, end: number}> {
+    const ranges: Array<{start: number, end: number}> = []
+    
+    // 将查询按字符分割，尝试匹配每个字符
+    for (let i = 0; i < query.length; i++) {
+      const charQuery = query[i]
+      try {
+        const match = pinyinMatch.match(text, charQuery)
+        if (match !== false) {
+          const charRanges = this.convertMatchToRanges(text, match)
+          ranges.push(...charRanges)
+        }
+      } catch (error) {
+        this.log(`字符级匹配失败: ${charQuery}`, error)
+      }
+    }
+    
+    return ranges
+  }
+
+  /**
+   * 将匹配结果转换为范围数组
+   */
+  private convertMatchToRanges(text: string, match: any): Array<{start: number, end: number}> {
+    const ranges: Array<{start: number, end: number}> = []
+    
+    if (Array.isArray(match) && match.length > 0) {
+      const processedTexts = new Set<string>()
+      
+      match.forEach((matchedText: any) => {
+        if (typeof matchedText === 'string' && !processedTexts.has(matchedText)) {
+          processedTexts.add(matchedText)
+          
+          let index = 0
+          while ((index = text.indexOf(matchedText, index)) !== -1) {
+            ranges.push({
+              start: index,
+              end: index + matchedText.length
+            })
+            index += matchedText.length
+          }
+        }
+      })
+    } else if (typeof match === 'string') {
+      const matchStr = match as string
+      let index = 0
+      while ((index = text.indexOf(matchStr, index)) !== -1) {
+        ranges.push({
+          start: index,
+          end: index + matchStr.length
+        })
+        index += matchStr.length
+      }
+    }
+    
+    return ranges
+  }
 
   /**
    * 去重项目，保持唯一性
@@ -6187,7 +6452,11 @@ const typeConfigs = [
         const searchTerm = searchInput.value.trim()
         if (searchTerm) {
           const keywords = searchTerm.toLowerCase().split(/\s+/).filter(k => k.length > 0)
-          text.innerHTML = this.highlightSearchTerms(item.text, keywords)
+          const highlightedText = this.highlightSearchTerms(item.text, keywords)
+          // 强制显示调试信息
+          console.log(`[PageDisplay] 高亮调试 - 原文: "${item.text}", 搜索词: "${searchTerm}", 关键词: [${keywords.join(', ')}], 高亮结果: "${highlightedText}"`)
+          this.log(`高亮调试 - 原文: "${item.text}", 搜索词: "${searchTerm}", 关键词: [${keywords.join(', ')}], 高亮结果: "${highlightedText}"`)
+          text.innerHTML = highlightedText
         } else {
           text.textContent = item.text
         }
