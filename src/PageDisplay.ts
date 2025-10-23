@@ -1,4 +1,5 @@
 import type { Block, DbId, BlockRef } from "./orca.d.ts"
+import pinyinMatch from 'pinyin-match'
 
 /**
  * 子块信息接口
@@ -1818,7 +1819,7 @@ const typeConfigs = [
   }
 
   /**
-   * 高亮搜索关键词
+   * 高亮搜索关键词（支持拼音搜索）
    * @param text 原始文本
    * @param keywords 搜索关键词数组
    * @returns 包含高亮标签的HTML字符串
@@ -1834,14 +1835,100 @@ const typeConfigs = [
     keywords.forEach(keyword => {
       if (keyword.trim()) {
         const escapedKeyword = this.escapeHtml(keyword.trim())
-        // 使用正则表达式进行不区分大小写的全局替换
+        
+        // 普通文本高亮
         const regex = new RegExp(`(${escapedKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
         highlightedText = highlightedText.replace(regex, '<mark class="page-display-highlight">$1</mark>')
+        
+        // 拼音高亮 - 使用更简单的方法
+        try {
+          const pinyinRanges = this.getPinyinMatchRanges(text, keyword)
+          if (pinyinRanges.length > 0) {
+            // 从后往前处理，避免位置偏移
+            pinyinRanges.sort((a, b) => b.start - a.start)
+            
+            pinyinRanges.forEach(range => {
+              const start = range.start
+              const end = range.end
+              const matchedText = text.substring(start, end)
+              const escapedMatchedText = this.escapeHtml(matchedText)
+              
+              // 简单检查是否已经被高亮过
+              if (!highlightedText.includes(`<mark class="page-display-highlight">${escapedMatchedText}</mark>`)) {
+                // 使用简单的字符串替换，避免复杂的正则表达式
+                const escapedMatchedTextRegex = new RegExp(`(${escapedMatchedText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'g')
+                highlightedText = highlightedText.replace(escapedMatchedTextRegex, '<mark class="page-display-highlight">$1</mark>')
+              }
+            })
+          }
+        } catch (error) {
+          this.logError("拼音高亮失败:", error)
+        }
       }
     })
     
     return highlightedText
   }
+
+  /**
+   * 检查文本是否匹配拼音搜索
+   * @param text 要检查的文本
+   * @param pinyinQuery 拼音查询字符串
+   * @returns 是否匹配
+   */
+  private matchesPinyin(text: string, pinyinQuery: string): boolean {
+    if (!text || !pinyinQuery) {
+      return false
+    }
+
+    try {
+      // 优先使用orca.utils.pinyin API
+      if (orca.utils && (orca.utils as any).pinyin && typeof (orca.utils as any).pinyin.match === 'function') {
+        return (orca.utils as any).pinyin.match(text, pinyinQuery)
+      }
+      
+      // 使用pinyin-match库进行拼音匹配
+      const match = pinyinMatch.match(text, pinyinQuery)
+      return match !== false && match.length > 0
+    } catch (error) {
+      this.logError("拼音匹配失败:", error)
+      return false
+    }
+  }
+
+  /**
+   * 获取文本中匹配拼音的字符范围
+   * @param text 要检查的文本
+   * @param pinyinQuery 拼音查询字符串
+   * @returns 匹配的字符位置数组
+   */
+  private getPinyinMatchRanges(text: string, pinyinQuery: string): Array<{start: number, end: number}> {
+    if (!text || !pinyinQuery) {
+      return []
+    }
+
+    try {
+      // 优先使用orca.utils.pinyin API
+      if (orca.utils && (orca.utils as any).pinyin && typeof (orca.utils as any).pinyin.getMatchRanges === 'function') {
+        return (orca.utils as any).pinyin.getMatchRanges(text, pinyinQuery)
+      }
+      
+      // 使用pinyin-match库获取匹配范围
+      const match = pinyinMatch.match(text, pinyinQuery)
+      if (match !== false && Array.isArray(match) && match.length > 0) {
+        return match.map((range: any) => ({
+          start: range[0],
+          end: range[1]
+        }))
+      }
+      
+      return []
+    } catch (error) {
+      this.logError("获取拼音匹配范围失败:", error)
+      return []
+    }
+  }
+
 
   /**
    * 去重项目，保持唯一性
@@ -4054,7 +4141,7 @@ const typeConfigs = [
   }
 
   /**
-   * 查找匹配搜索词的子块
+   * 查找匹配搜索词的子块（支持拼音搜索）
    * @param childBlocksInfo 子块信息列表
    * @param searchTerm 搜索词
    * @returns 匹配的子块列表
@@ -4063,22 +4150,31 @@ const typeConfigs = [
     const keywords = searchTerm.toLowerCase().split(/\s+/).filter(k => k.length > 0)
     
     return childBlocksInfo.filter(child => {
-      // 检查子块文本是否匹配
+      // 检查子块文本是否匹配（普通搜索）
       const textMatch = child.text && child.text.toLowerCase().includes(searchTerm.toLowerCase())
       
-      // 检查子块别名是否匹配
+      // 检查子块别名是否匹配（普通搜索）
       const aliasMatch = child.aliases.some(alias => 
         alias.toLowerCase().includes(searchTerm.toLowerCase())
       )
       
-      // 检查是否匹配任何关键词
+      // 检查是否匹配任何关键词（普通搜索）
       const keywordMatch = keywords.some(keyword => {
         const textContains = child.text && child.text.toLowerCase().includes(keyword)
         const aliasContains = child.aliases.some(alias => alias.toLowerCase().includes(keyword))
         return textContains || aliasContains
       })
       
-      return textMatch || aliasMatch || keywordMatch
+      // 检查拼音匹配
+      const pinyinTextMatch = child.text && this.matchesPinyin(child.text, searchTerm)
+      const pinyinAliasMatch = child.aliases.some(alias => this.matchesPinyin(alias, searchTerm))
+      const pinyinKeywordMatch = keywords.some(keyword => {
+        const textPinyinMatch = child.text && this.matchesPinyin(child.text, keyword)
+        const aliasPinyinMatch = child.aliases.some(alias => this.matchesPinyin(alias, keyword))
+        return textPinyinMatch || aliasPinyinMatch
+      })
+      
+      return textMatch || aliasMatch || keywordMatch || pinyinTextMatch || pinyinAliasMatch || pinyinKeywordMatch
     })
   }
 
@@ -5787,7 +5883,7 @@ const typeConfigs = [
     
     const searchInput = document.createElement('input')
     searchInput.type = 'text'
-    searchInput.placeholder = '搜索页面、标签、属性... (支持多关键词)'
+    searchInput.placeholder = '搜索页面、标签、属性... (支持拼音和多关键词)'
     searchInput.className = 'page-display-search-input'
     this.applyStyles(searchInput, 'page-display-search-input')
     
@@ -5816,18 +5912,21 @@ const typeConfigs = [
       return filteredItems
     }
     
-    // 简化的搜索匹配逻辑
+    // 简化的搜索匹配逻辑（支持拼音搜索）
     const matchesItem = (item: PageDisplayItem, keyword: string): boolean => {
       const lowerKeyword = keyword.toLowerCase()
       
-      // 使用 searchableText 进行简单匹配
-      if (item.searchableText) {
-        return item.searchableText.toLowerCase().includes(lowerKeyword)
-      }
+      // 普通文本匹配
+      const textMatch = item.text.toLowerCase().includes(lowerKeyword)
+      const aliasMatch = item.aliases.some(alias => alias.toLowerCase().includes(lowerKeyword))
+      const searchableTextMatch = item.searchableText ? item.searchableText.toLowerCase().includes(lowerKeyword) : false
       
-      // 回退到基本文本匹配
-      return item.text.toLowerCase().includes(lowerKeyword) ||
-             item.aliases.some(alias => alias.toLowerCase().includes(lowerKeyword))
+      // 拼音匹配
+      const pinyinTextMatch = this.matchesPinyin(item.text, keyword)
+      const pinyinAliasMatch = item.aliases.some(alias => this.matchesPinyin(alias, keyword))
+      const pinyinSearchableTextMatch = item.searchableText ? this.matchesPinyin(item.searchableText, keyword) : false
+      
+      return textMatch || aliasMatch || searchableTextMatch || pinyinTextMatch || pinyinAliasMatch || pinyinSearchableTextMatch
     }
     
     // 更新显示的函数
