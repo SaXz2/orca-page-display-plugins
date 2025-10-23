@@ -316,7 +316,7 @@
     transition: all 0.2s ease;
     position: relative;
     padding: 4px;
-    margin: 7px;
+    margin-top: 8px;
     border: 1px solid #7d7d7d40;
 }
 
@@ -328,12 +328,10 @@
     align-items: center;
     padding: var(--orca-spacing-xs) var(--orca-spacing-sm);
     margin-bottom: var(--orca-spacing-xs);
-    background: var(--orca-color-bg-1);
     border-radius: var(--orca-radius-sm);
     font-size: var(--orca-fontsize-2xs);
     color: var(--orca-color-text-2);
     font-family: var(--orca-fontfamily-ui);
-    border-left: 3px solid var(--orca-color-primary-3);
     transition: all 0.2s ease;
     margin-left: var(--orca-spacing-sm);
     position: relative;
