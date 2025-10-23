@@ -735,6 +735,24 @@ export class PageDisplay {
   /** 调试模式开关 */
   private debugMode: boolean = false
   
+  // === 日期格式配置 ===
+  /** 日期格式主题配置 */
+  private readonly THEME = 12
+  
+  /**
+   * 获取日期格式字符串
+   * @returns 日期格式字符串
+   */
+  private getDateFormat(): string {
+    // 根据 THEME 值返回对应的日期格式
+    switch (this.THEME) {
+      case 12:
+        return 'yyyy-MM-dd'
+      default:
+        return 'yyyy-MM-dd'
+    }
+  }
+  
   // === 类型过滤控制属性 ===
   /** 控制类型过滤面板是否显示 */
   private showTypeFilters: boolean = false
@@ -4601,34 +4619,196 @@ const typeConfigs = [
    * @returns 格式化后的日期字符串
    */
   private formatDate(date: Date): string {
-    const now = new Date()
-    const diffTime = Math.abs(now.getTime() - date.getTime())
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    const dateFormat = this.getDateFormat()
+    this.log("PageDisplay: Formatting date with format:", { date, format: dateFormat })
     
-    // 如果是今天
-    if (diffDays === 0) {
-      return `今天 ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+    // 使用配置的日期格式
+    if (dateFormat === 'yyyy-MM-dd') {
+      return this.formatRelativeDate(date)
     }
     
-    // 如果是昨天
-    if (diffDays === 1) {
-      return `昨天 ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
-    }
-    
-    // 如果是本周内
-    if (diffDays <= 7) {
-      const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-      return `${weekdays[date.getDay()]} ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
-    }
-    
-    // 其他情况显示完整日期
+    // 默认格式（回退）
     return date.toLocaleDateString('zh-CN', {
       year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      month: '2-digit',
+      day: '2-digit'
     })
+  }
+
+  /**
+   * 格式化相对日期
+   * @param date 日期对象
+   * @returns 格式化后的相对日期字符串
+   */
+  private formatRelativeDate(date: Date): string {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    
+    const diffTime = targetDate.getTime() - today.getTime()
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
+    
+    // 获取周几信息
+    const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+    const weekday = weekdays[date.getDay()]
+    
+    this.log("PageDisplay: Relative date calculation:", { 
+      date, 
+      today, 
+      diffDays, 
+      weekday
+    })
+    
+    // 根据天数差返回相对日期
+    if (diffDays === 0) {
+      return `今天 ${weekday}`
+    } else if (diffDays === 1) {
+      return `明天 ${weekday}`
+    } else if (diffDays === 2) {
+      return `后天 ${weekday}`
+    } else if (diffDays === 3) {
+      return `大后天 ${weekday}`
+    } else if (diffDays === -1) {
+      return `昨天 ${weekday}`
+    } else if (diffDays === -2) {
+      return `前天 ${weekday}`
+    } else if (diffDays === -3) {
+      return `大前天 ${weekday}`
+    } else {
+      // 超过3天的日期，使用自然语言表达
+      return this.formatNaturalRelativeDate(date, now, weekday)
+    }
+  }
+
+  /**
+   * 格式化自然相对日期
+   * @param date 目标日期
+   * @param now 当前日期
+   * @param weekday 周几
+   * @returns 自然相对日期字符串
+   */
+  private formatNaturalRelativeDate(date: Date, now: Date, weekday: string): string {
+    const yearDiff = date.getFullYear() - now.getFullYear()
+    const monthDiff = (date.getFullYear() - now.getFullYear()) * 12 + (date.getMonth() - now.getMonth())
+    const dayDiff = Math.floor((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+    
+    // 获取完整日期格式
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const fullDate = `${year}-${month}-${day}`
+    
+    this.log("PageDisplay: Natural relative date calculation:", { 
+      date, 
+      now, 
+      yearDiff, 
+      monthDiff, 
+      dayDiff, 
+      weekday,
+      fullDate
+    })
+    
+    // 处理年份差异
+    if (yearDiff < 0) {
+      // 过去的年份
+      const absYearDiff = Math.abs(yearDiff)
+      if (absYearDiff === 1) {
+        return `${fullDate} 前年 ${weekday}`
+      } else if (absYearDiff === 2) {
+        return `${fullDate} 前两年 ${weekday}`
+      } else if (absYearDiff === 3) {
+        return `${fullDate} 前三年 ${weekday}`
+      } else if (absYearDiff <= 5) {
+        return `${fullDate} 前${absYearDiff}年 ${weekday}`
+      } else {
+        // 超过5年，只显示日期
+        return `${fullDate} ${weekday}`
+      }
+    } else if (yearDiff > 0) {
+      // 未来的年份
+      if (yearDiff === 1) {
+        return `${fullDate} 明年 ${weekday}`
+      } else if (yearDiff === 2) {
+        return `${fullDate} 后年 ${weekday}`
+      } else if (yearDiff <= 5) {
+        return `${fullDate} ${yearDiff}年后 ${weekday}`
+      } else {
+        // 超过5年，只显示日期
+        return `${fullDate} ${weekday}`
+      }
+    }
+    
+    // 同一年内，处理月份差异
+    if (monthDiff < 0) {
+      // 过去的月份
+      const absMonthDiff = Math.abs(monthDiff)
+      if (absMonthDiff === 1) {
+        return `${fullDate} 上个月 ${weekday}`
+      } else if (absMonthDiff === 2) {
+        return `${fullDate} 前两个月 ${weekday}`
+      } else if (absMonthDiff === 3) {
+        return `${fullDate} 前三个月 ${weekday}`
+      } else if (absMonthDiff === 6) {
+        return `${fullDate} 半年前 ${weekday}`
+      } else if (absMonthDiff < 12) {
+        return `${fullDate} 前${absMonthDiff}个月 ${weekday}`
+      }
+    } else if (monthDiff > 0) {
+      // 未来的月份
+      if (monthDiff === 1) {
+        return `${fullDate} 下个月 ${weekday}`
+      } else if (monthDiff === 2) {
+        return `${fullDate} 两个月后 ${weekday}`
+      } else if (monthDiff === 3) {
+        return `${fullDate} 三个月后 ${weekday}`
+      } else if (monthDiff === 6) {
+        return `${fullDate} 半年后 ${weekday}`
+      } else if (monthDiff < 12) {
+        return `${fullDate} ${monthDiff}个月后 ${weekday}`
+      }
+    }
+    
+    // 同一个月内，处理天数差异
+    if (dayDiff < 0) {
+      // 过去的天数
+      const absDayDiff = Math.abs(dayDiff)
+      if (absDayDiff === 7) {
+        return `${fullDate} 前一周 ${weekday}`
+      } else if (absDayDiff === 14) {
+        return `${fullDate} 前两周 ${weekday}`
+      } else if (absDayDiff === 15) {
+        return `${fullDate} 半个月前 ${weekday}`
+      } else if (absDayDiff < 30) {
+        return `${fullDate} 前${absDayDiff}天 ${weekday}`
+      }
+    } else if (dayDiff > 0) {
+      // 未来的天数
+      if (dayDiff === 7) {
+        return `${fullDate} 一周后 ${weekday}`
+      } else if (dayDiff === 14) {
+        return `${fullDate} 两周后 ${weekday}`
+      } else if (dayDiff === 15) {
+        return `${fullDate} 半个月后 ${weekday}`
+      } else if (dayDiff < 30) {
+        return `${fullDate} ${dayDiff}天后 ${weekday}`
+      }
+    }
+    
+    // 默认显示完整日期
+    return `${fullDate} ${weekday}`
+  }
+
+  /**
+   * 获取日期的周数
+   * @param date 日期对象
+   * @returns 周数
+   */
+  private getWeekNumber(date: Date): number {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+    const dayNum = d.getUTCDay() || 7
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum)
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
   }
 
   /**
@@ -6500,7 +6680,7 @@ const typeConfigs = [
       filteredItems = this.applyDateFilter(filteredItems)
       this.log(`PageDisplay: 日期过滤前: ${beforeDateFilterCount} 项, 日期过滤后: ${filteredItems.length} 项`)
       
-      // 对过滤后的项目进行置顶排序：包含于块(非子标签)置顶显示
+      // 对过滤后的项目按创建时间降序排序
       filteredItems = filteredItems.sort((a, b) => {
         const aIsContainedIn = containedInBlockIds.includes(a.id)
         const bIsContainedIn = containedInBlockIds.includes(b.id)
@@ -6515,7 +6695,10 @@ const typeConfigs = [
         if (aIsContainedInNotTag && !bIsContainedInNotTag) return -1
         if (!aIsContainedInNotTag && bIsContainedInNotTag) return 1
         
-        return 0  // 其他保持原顺序
+        // 其他按创建时间降序排序
+        const aCreated = a.created || 0
+        const bCreated = b.created || 0
+        return bCreated - aCreated  // 降序：新的在前
       })
       
       // 更新页面统计
@@ -6793,19 +6976,7 @@ const typeConfigs = [
             // 创建子块内容容器
             const childContent = document.createElement('div')
             childContent.className = 'page-display-child-content'
-            childContent.style.cssText = `
-              margin-top: 4px;
-              padding-left: 0px;
-              font-size: 14px;
-              color: var(--orca-color-text-2);
-              border-left: 2px solid var(--orca-color-border-2);
-              margin-left: 8px;
-              width: calc(100% - 8px);
-              max-width: calc(100% - 8px);
-              display: block;
-              box-sizing: border-box;
-              overflow: hidden;
-            `
+            this.applyStyles(childContent, 'page-display-child-content')
             
             // 创建展开/收起状态
             let isExpanded = false
@@ -7556,6 +7727,7 @@ const typeConfigs = [
     return breadcrumbContainer
   }
 
+
   /**
    * 异步加载面包屑
    * @param item 页面显示项目
@@ -7568,8 +7740,8 @@ const typeConfigs = [
       // 获取当前块信息
       const block = await this.cachedApiCall("get-block", item.id)
       if (!block || !block.parent) {
-        breadcrumbLevel.textContent = '无父级'
-        breadcrumbLevel.style.opacity = '0.4'
+        // 没有父级，隐藏面包屑容器
+        this.hideBreadcrumbContainer(breadcrumbLevel)
         return
       }
 
@@ -7577,26 +7749,87 @@ const typeConfigs = [
       const breadcrumbPath = await this.buildBreadcrumbPathAsync(block.parent)
       
       if (breadcrumbPath && breadcrumbPath.length > 0) {
-        breadcrumbLevel.textContent = breadcrumbPath.join(' › ')
+        // 创建交互式面包屑
+        this.createInteractiveBreadcrumb(breadcrumbLevel, breadcrumbPath)
         breadcrumbLevel.style.opacity = '1'
       } else {
-        breadcrumbLevel.textContent = '无父级'
-        breadcrumbLevel.style.opacity = '0.4'
+        // 没有面包屑路径，隐藏面包屑容器
+        this.hideBreadcrumbContainer(breadcrumbLevel)
       }
     } catch (error) {
       this.log("PageDisplay: Error loading breadcrumb", error)
-      breadcrumbLevel.textContent = '加载失败'
-      breadcrumbLevel.style.opacity = '0.4'
+      // 加载失败，隐藏面包屑容器
+      this.hideBreadcrumbContainer(breadcrumbLevel)
+    }
+  }
+
+  /**
+   * 创建交互式面包屑
+   * @param breadcrumbLevel 面包屑元素
+   * @param breadcrumbPath 面包屑路径数组
+   */
+  private createInteractiveBreadcrumb(breadcrumbLevel: HTMLElement, breadcrumbPath: Array<{id: DbId, text: string}>): void {
+    // 清空原有内容
+    breadcrumbLevel.innerHTML = ''
+    
+    breadcrumbPath.forEach((item, index) => {
+      // 创建层级元素
+      const levelElement = document.createElement('span')
+      levelElement.className = 'page-display-breadcrumb-level-item'
+      levelElement.textContent = item.text
+      levelElement.setAttribute('data-block-id', item.id.toString())
+      
+      // 添加点击事件
+      levelElement.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        this.log("PageDisplay: Breadcrumb level clicked", { blockId: item.id, text: item.text })
+        this.openBlock(item.id)
+      })
+      
+      // 添加悬停效果
+      levelElement.addEventListener('mouseenter', () => {
+        levelElement.style.backgroundColor = 'var(--orca-color-bg-2)'
+        levelElement.style.cursor = 'pointer'
+      })
+      
+      levelElement.addEventListener('mouseleave', () => {
+        levelElement.style.backgroundColor = 'transparent'
+      })
+      
+      breadcrumbLevel.appendChild(levelElement)
+      
+      // 添加分隔符（除了最后一个）
+      if (index < breadcrumbPath.length - 1) {
+        const separator = document.createElement('span')
+        separator.className = 'page-display-breadcrumb-separator'
+        separator.textContent = ' › '
+        separator.style.color = 'var(--orca-color-text-3)'
+        separator.style.margin = '0 4px'
+        breadcrumbLevel.appendChild(separator)
+      }
+    })
+  }
+
+  /**
+   * 隐藏面包屑容器
+   * @param breadcrumbLevel 面包屑元素
+   */
+  private hideBreadcrumbContainer(breadcrumbLevel: HTMLElement): void {
+    const breadcrumbContainer = breadcrumbLevel.parentElement
+    if (breadcrumbContainer && breadcrumbContainer.classList.contains('page-display-breadcrumb-container')) {
+      // 隐藏整个面包屑容器
+      breadcrumbContainer.style.display = 'none'
     }
   }
 
   /**
    * 异步构建面包屑路径
    * @param parentId 父块ID
-   * @returns 面包屑路径数组
+   * @returns 面包屑路径数组，包含块ID和显示文本
    */
-  private async buildBreadcrumbPathAsync(parentId: DbId): Promise<string[]> {
-    const path: string[] = []
+  private async buildBreadcrumbPathAsync(parentId: DbId): Promise<Array<{id: DbId, text: string}>> {
+    const path: Array<{id: DbId, text: string}> = []
     let currentId = parentId
     const visited = new Set<DbId>() // 防止循环引用
 
@@ -7619,8 +7852,8 @@ const typeConfigs = [
           blockText = this.formatDateBlock(currentBlock, blockText)
         }
 
-        // 将当前块文本添加到路径开头
-        path.unshift(blockText)
+        // 将当前块信息添加到路径开头
+        path.unshift({ id: currentId, text: blockText })
 
         // 获取父块ID
         if (currentBlock.parent) {
