@@ -5514,30 +5514,34 @@ const typeConfigs = [
       // 渲染所有应该显示的项目
       renderItems(list, itemsToShow, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
 
-      // 如果还有更多项目，添加滚动加载触发器
+      // 更新页面计数 - 显示当前已加载的数量
+      const searchTerm = searchInput.value
+      const totalCount = items.length
+      const displayedCount = itemsToShow.length
+      
+      if (searchTerm.trim()) {
+        pageCount.textContent = `(${displayedCount}/${totalCount})`
+      } else {
+        pageCount.textContent = `(${displayedCount})`
+      }
+
+      // 如果还有更多项目，添加滚动加载触发器（隐藏）
       if (endIndex < items.length) {
         addScrollLoadTrigger(list, items, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
       }
     }
     
-    // 添加滚动加载触发器
+    // 添加滚动加载触发器（隐藏）
     const addScrollLoadTrigger = (list: HTMLElement, items: PageDisplayItem[], searchInput: HTMLInputElement, tagBlockIds: DbId[], inlineRefIds: DbId[], containedInBlockIds: DbId[]) => {
-      // 创建加载触发器元素
+      // 创建隐藏的加载触发器元素
       const loadTrigger = document.createElement('li')
       loadTrigger.className = 'page-display-scroll-trigger'
       loadTrigger.style.cssText = `
-        height: 20px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--text-secondary, #666);
-        font-size: 12px;
+        height: 1px;
+        visibility: hidden;
+        pointer-events: none;
       `
       
-      // 显示加载状态
-      const loadingText = document.createElement('span')
-      loadingText.textContent = '滚动加载更多...'
-      loadTrigger.appendChild(loadingText)
       list.appendChild(loadTrigger)
 
       // 创建Intersection Observer
@@ -5548,13 +5552,8 @@ const typeConfigs = [
               // 当触发器进入视口时，加载下一批
               this.currentBatch++
               
-              // 更新加载文本
-              loadingText.textContent = '正在加载...'
-              
-              // 延迟一点时间让用户看到加载状态
-              setTimeout(() => {
-                renderItemsWithLazyLoading(list, items, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
-              }, 100)
+              // 立即重新渲染
+              renderItemsWithLazyLoading(list, items, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
             }
           })
         },
