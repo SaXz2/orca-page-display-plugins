@@ -1,6 +1,16 @@
 import type { Block, DbId, BlockRef } from "./orca.d.ts"
 
 /**
+ * 子块信息接口
+ */
+interface ChildBlockInfo {
+  id: DbId
+  text: string
+  aliases: string[]
+  level: number // 层级深度
+}
+
+/**
  * 错误处理器类
  * 负责统一处理各种错误情况，包括重试逻辑和用户通知
  */
@@ -721,6 +731,8 @@ interface PageDisplayItem {
   searchableText?: string
   /** 结构化的搜索数据 */
   searchableData?: SearchableData
+  /** 子块信息（用于显示匹配的子块内容） */
+  childBlocksInfo?: ChildBlockInfo[]
 }
 
 /**
@@ -3890,73 +3902,102 @@ const typeConfigs = [
 
   /**
    * 检查项目类型是否需要递归子内容搜索
-   * 这些类型的别名块在搜索时需要包含其子块的内容
+   * 所有块类型都支持递归子内容搜索，包括别名块和普通块
    */
   private shouldIncludeChildrenInSearch(itemType: PageDisplayItemType): boolean {
-    const aliasTypesWithChildrenSearch: PageDisplayItemType[] = [
-      'referenced-tag',           // 被引用的标签块
-      'contained-in',             // 包含于父块
-      'child-referenced-tag-alias', // 包含于子标签
-      'inline-ref',               // 内联引用
-      'property-ref-alias',       // 别名属性引用
-      'page-direct-children',     // 页面内联别名块
-      'tag',                      // 页面标签
-      'child-referenced-inline',  // 页面内联块引用
-      'recursive-backref-alias',  // 递归直接反链别名块属性
-      'backref-alias-blocks',     // 直接反链别名
-      'child-referenced-alias',   // 递归反链别名
-      'referencing-alias'         // 引用别名
-    ]
-    
-    return aliasTypesWithChildrenSearch.includes(itemType)
+    // 所有块类型都支持递归子内容搜索
+    return true
   }
+
+  /**
+   * 查找匹配搜索词的子块
+   * @param childBlocksInfo 子块信息列表
+   * @param searchTerm 搜索词
+   * @returns 匹配的子块列表
+   */
+  private findMatchingChildren(childBlocksInfo: ChildBlockInfo[], searchTerm: string): ChildBlockInfo[] {
+    const keywords = searchTerm.toLowerCase().split(/\s+/).filter(k => k.length > 0)
+    
+    return childBlocksInfo.filter(child => {
+      // 检查子块文本是否匹配
+      const textMatch = child.text && child.text.toLowerCase().includes(searchTerm.toLowerCase())
+      
+      // 检查子块别名是否匹配
+      const aliasMatch = child.aliases.some(alias => 
+        alias.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      
+      // 检查是否匹配任何关键词
+      const keywordMatch = keywords.some(keyword => {
+        const textContains = child.text && child.text.toLowerCase().includes(keyword)
+        const aliasContains = child.aliases.some(alias => alias.toLowerCase().includes(keyword))
+        return textContains || aliasContains
+      })
+      
+      return textMatch || aliasMatch || keywordMatch
+    })
+  }
+
 
   /**
    * 递归获取块的所有子块内容（用于搜索）
    * @param blockId 块ID
-   * @returns 所有子块的文本内容
+   * @param level 当前层级深度
+   * @returns 所有子块的文本内容和详细信息
    */
-  private async getChildrenTextForSearch(blockId: DbId): Promise<string[]> {
+  private async getChildrenTextForSearch(blockId: DbId, level: number = 0): Promise<{ texts: string[], childBlocks: ChildBlockInfo[] }> {
     const texts: string[] = []
+    const childBlocks: ChildBlockInfo[] = []
     
     try {
       // 获取当前块
       const block = await this.cachedApiCall("get-block", blockId)
       if (!block || !block.children || block.children.length === 0) {
-        return texts
+        return { texts, childBlocks }
       }
       
       // 获取所有子块
-      const childBlocks = await this.cachedApiCall("get-blocks", block.children)
-      if (!childBlocks || !Array.isArray(childBlocks)) {
-        return texts
+      const childBlocksData = await this.cachedApiCall("get-blocks", block.children)
+      if (!childBlocksData || !Array.isArray(childBlocksData)) {
+        return { texts, childBlocks }
       }
       
       // 遍历子块
-      for (const child of childBlocks) {
-        // 添加子块文本
+      for (const child of childBlocksData) {
+        const childInfo: ChildBlockInfo = {
+          id: child.id,
+          text: child.text || '',
+          aliases: child.aliases || [],
+          level: level + 1
+        }
+        
+        // 添加子块信息
+        childBlocks.push(childInfo)
+        
+        // 添加子块文本到搜索文本
         if (child.text) {
           texts.push(child.text)
         }
         
-        // 添加子块别名
+        // 添加子块别名到搜索文本
         if (child.aliases && child.aliases.length > 0) {
           texts.push(...child.aliases)
         }
         
         // 递归获取子块的子块内容
         if (child.children && child.children.length > 0) {
-          const grandchildTexts = await this.getChildrenTextForSearch(child.id)
-          texts.push(...grandchildTexts)
+          const grandchildResult = await this.getChildrenTextForSearch(child.id, level + 1)
+          texts.push(...grandchildResult.texts)
+          childBlocks.push(...grandchildResult.childBlocks)
         }
       }
       
-      this.log(`🔍 块 ${blockId} 递归获取到 ${texts.length} 个子内容`)
+      this.log(`🔍 块 ${blockId} 递归获取到 ${texts.length} 个子内容，${childBlocks.length} 个子块信息`)
     } catch (error) {
       this.logError(`获取块 ${blockId} 子内容失败:`, error)
     }
     
-    return texts
+    return { texts, childBlocks }
   }
 
   // 直接使用 block.refs 解析搜索数据
@@ -3971,6 +4012,7 @@ const typeConfigs = [
   private async enhanceItemForSearch(item: PageDisplayItem, block: Block): Promise<PageDisplayItem> {
     // 收集所有可搜索的文本
     const searchableTexts = [item.text, ...item.aliases]
+    let childBlocksInfo: ChildBlockInfo[] = []
     
     this.log(`🔍 开始解析块 ${block.id} 的搜索数据，类型: ${item.itemType}`)
     
@@ -3978,10 +4020,11 @@ const typeConfigs = [
     const needChildrenSearch = this.shouldIncludeChildrenInSearch(item.itemType)
     if (needChildrenSearch) {
       this.log(`🔍 块 ${block.id} 类型 ${item.itemType} 需要递归子内容搜索`)
-      const childrenTexts = await this.getChildrenTextForSearch(block.id)
-      if (childrenTexts.length > 0) {
-        searchableTexts.push(...childrenTexts)
-        this.log(`🔍 块 ${block.id} 添加了 ${childrenTexts.length} 个子内容到搜索文本`)
+      const childrenResult = await this.getChildrenTextForSearch(block.id)
+      if (childrenResult.texts.length > 0) {
+        searchableTexts.push(...childrenResult.texts)
+        childBlocksInfo = childrenResult.childBlocks
+        this.log(`🔍 块 ${block.id} 添加了 ${childrenResult.texts.length} 个子内容到搜索文本，${childBlocksInfo.length} 个子块信息`)
       }
     }
     
@@ -4121,7 +4164,8 @@ const typeConfigs = [
     
     return {
       ...item,
-      searchableText: allSearchableText
+      searchableText: allSearchableText,
+      childBlocksInfo: childBlocksInfo // 添加子块信息
     }
   }
 
@@ -5849,10 +5893,173 @@ const typeConfigs = [
         this.applyStyles(text, 'page-display-item-text')
         itemElement.appendChild(text)
         
+        // 如果有搜索词且项目有子块信息，显示匹配的子块内容
+        if (searchTerm && item.childBlocksInfo && item.childBlocksInfo.length > 0) {
+          const matchedChildren = this.findMatchingChildren(item.childBlocksInfo, searchTerm)
+          if (matchedChildren.length > 0) {
+            // 创建一个包装容器来包含主内容和子块内容
+            const contentWrapper = document.createElement('div')
+            contentWrapper.style.cssText = `
+              display: flex;
+              flex-direction: column;
+              width: 100%;
+            `
+            
+            // 将原有的文本内容移动到包装容器中
+            const textWrapper = document.createElement('div')
+            textWrapper.style.cssText = `
+              display: flex;
+              align-items: center;
+              width: 100%;
+            `
+            textWrapper.appendChild(icon)
+            textWrapper.appendChild(text)
+            
+            contentWrapper.appendChild(textWrapper)
+            
+            // 创建子块内容容器
+            const childContent = document.createElement('div')
+            childContent.className = 'page-display-child-content'
+            childContent.style.cssText = `
+              margin-top: 4px;
+              padding-left: 20px;
+              font-size: 12px;
+              color: var(--orca-color-text-2);
+              border-left: 2px solid var(--orca-color-border-2);
+              margin-left: 8px;
+              width: 100%;
+              display: block;
+            `
+            
+            // 创建展开/收起状态
+            let isExpanded = false
+            const maxDisplay = 3
+            
+            // 创建子块元素的函数
+            const createChildElement = (child: ChildBlockInfo) => {
+              const childElement = document.createElement('div')
+              childElement.style.cssText = `
+                margin-bottom: 2px;
+                padding: 2px 4px;
+                background: var(--orca-color-bg-2);
+                border-radius: 3px;
+                font-size: 11px;
+                width: 100%;
+                display: block;
+                cursor: pointer;
+                transition: background-color 0.2s ease;
+              `
+              
+              // 高亮搜索词
+              const childText = child.text || child.aliases[0] || `子块 ${child.id}`
+              const highlightedText = this.highlightSearchTerms(childText, searchTerm.toLowerCase().split(/\s+/).filter(k => k.length > 0))
+              childElement.innerHTML = highlightedText
+              
+              // 添加悬停效果
+              childElement.addEventListener('mouseenter', () => {
+                const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                childElement.style.backgroundColor = isDarkMode ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'
+              })
+              
+              childElement.addEventListener('mouseleave', () => {
+                childElement.style.backgroundColor = 'var(--orca-color-bg-2)'
+              })
+              
+              // 添加点击事件
+              childElement.addEventListener('click', (e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                
+                this.log(`PageDisplay: 点击子块 ${child.id}，跳转到子块`)
+                
+                // 检查是否按下了Shift键
+                if (e.shiftKey) {
+                  // Shift+点击：在侧面板打开子块
+                  this.openBlockInSidePanel(child.id)
+                } else {
+                  // 普通点击：直接跳转到子块
+                  this.openBlock(child.id)
+                }
+              })
+              
+              return childElement
+            }
+            
+            // 渲染子块的函数
+            const renderChildren = (showAll: boolean) => {
+              // 清空现有内容
+              childContent.innerHTML = ''
+              
+              const displayCount = showAll ? matchedChildren.length : Math.min(maxDisplay, matchedChildren.length)
+              
+              for (let i = 0; i < displayCount; i++) {
+                const child = matchedChildren[i]
+                const childElement = createChildElement(child)
+                childContent.appendChild(childElement)
+              }
+              
+              // 如果还有更多匹配的子块，显示展开/收起按钮
+              if (matchedChildren.length > maxDisplay) {
+                const toggleElement = document.createElement('div')
+                toggleElement.style.cssText = `
+                  font-style: italic;
+                  color: var(--orca-color-text-3);
+                  font-size: 10px;
+                  margin-top: 2px;
+                  cursor: pointer;
+                  padding: 2px 4px;
+                  border-radius: 3px;
+                  transition: background-color 0.2s ease;
+                `
+                
+                const updateToggleText = () => {
+                  if (isExpanded) {
+                    toggleElement.textContent = `收起 (显示前 ${maxDisplay} 个)`
+                  } else {
+                    toggleElement.textContent = `展开全部 (共 ${matchedChildren.length} 个匹配项)`
+                  }
+                }
+                
+                updateToggleText()
+                
+                // 添加悬停效果
+                toggleElement.addEventListener('mouseenter', () => {
+                  const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+                  toggleElement.style.backgroundColor = isDarkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'
+                })
+                
+                toggleElement.addEventListener('mouseleave', () => {
+                  toggleElement.style.backgroundColor = 'transparent'
+                })
+                
+                // 添加点击事件
+                toggleElement.addEventListener('click', (e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  
+                  isExpanded = !isExpanded
+                  renderChildren(isExpanded)
+                })
+                
+                childContent.appendChild(toggleElement)
+              }
+            }
+            
+            // 初始渲染
+            renderChildren(false)
+            
+            contentWrapper.appendChild(childContent)
+            
+            // 清空原有内容并添加新的包装容器
+            itemElement.innerHTML = ''
+            itemElement.appendChild(contentWrapper)
+          }
+        }
+        
         // 添加悬停效果
         itemElement.addEventListener('mouseenter', () => {
           const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-          itemElement.style.backgroundColor = isDarkMode ? '#2d2d2d' : '#f5f5f5'
+          itemElement.style.backgroundColor = isDarkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'
         })
         
         itemElement.addEventListener('mouseleave', () => {
