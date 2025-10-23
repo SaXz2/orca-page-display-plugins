@@ -7252,10 +7252,10 @@ const typeConfigs = [
               const childElement = document.createElement('div')
               childElement.style.cssText = `
                 margin-bottom: 2px;
-                padding: 2px 4px;
+                padding: 4px 6px;
                 background: var(--orca-color-bg-2);
                 border-radius: 3px;
-                font-size: 11px;
+                font-size: 14px;
                 width: 100%;
                 display: block;
                 cursor: pointer;
@@ -7316,10 +7316,10 @@ const typeConfigs = [
                 toggleElement.style.cssText = `
                   font-style: italic;
                   color: var(--orca-color-text-3);
-                  font-size: 10px;
+                  font-size: 12px;
                   margin-top: 2px;
                   cursor: pointer;
-                  padding: 2px 4px;
+                  padding: 4px 6px;
                   border-radius: 3px;
                   transition: background-color 0.2s ease;
                 `
