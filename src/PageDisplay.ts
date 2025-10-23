@@ -726,7 +726,7 @@ class StyleManager {
 /**
  * 页面显示项目类型
  */
-type PageDisplayItemType = 'tag' | 'referenced-tag' | 'referenced' | 'property-ref' | 'contained-in' | 'inline-ref' | 'referencing-alias' | 'child-referenced-alias' | 'child-referenced-tag-alias' | 'child-referenced-inline' | 'backref-alias-blocks' | 'backref' | 'recursive-backref' | 'recursive-backref-alias'
+type PageDisplayItemType = 'tag' | 'referenced-tag' | 'property-ref-alias' | 'property-ref-block' | 'contained-in' | 'inline-ref' | 'referencing-alias' | 'child-referenced-alias' | 'child-referenced-tag-alias' | 'child-referenced-inline' | 'backref-alias-blocks' | 'backref' | 'recursive-backref' | 'recursive-backref-alias'
 
 type DisplayMode = 'flat' | 'grouped'
 type DisplayGroupsMap = Record<PageDisplayItemType, PageDisplayItem[]>
@@ -1124,7 +1124,7 @@ export class PageDisplay {
    */
   private initializeTypeFilters(): void {
     const allTypes: PageDisplayItemType[] = [
-      'tag', 'referenced-tag', 'referenced', 'property-ref', 'contained-in', 'inline-ref', 'referencing-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline',
+      'tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'referencing-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline',
       'backref-alias-blocks', 'backref', 'recursive-backref', 'recursive-backref-alias'
     ]
     
@@ -1409,17 +1409,17 @@ export class PageDisplay {
     
     // 类型配置 - 重新组织为更紧凑的布局
     const typeConfigs = [
-      { type: 'referenced', label: '被引用', icon: 'ti-arrow-up' },
-      { type: 'referenced-tag', label: '被引用的标签块', icon: 'ti-hash' },
+      { type: 'referenced-tag', label: '被引用的标签块', icon: 'ti-arrow-up' },
       { type: 'contained-in', label: '包含于父块', icon: 'ti-arrow-up' },
       { type: 'tag', label: '包含于子标签', icon: 'ti-hash' },
       { type: 'inline-ref', label: '内联引用', icon: 'ti-link' },
-      { type: 'property-ref', label: '属性引用', icon: 'ti-align-box-center-stretch' },
-      { type: 'referencing-alias', label: '直接引用别名', icon: 'ti-arrow-right' },
-        { type: 'child-referenced-alias', label: '页面子块内联别名', icon: 'ti-cube' },
-      { type: 'child-referenced-tag-alias', label: '页面子块标签别名', icon: 'ti-hash' },
-      { type: 'child-referenced-inline', label: '页面子块内联块引用', icon: 'ti-link' },
-      { type: 'backref-alias-blocks', label: '递归直接反链别名块', icon: 'ti-zoom-question' },
+      { type: 'property-ref-alias', label: '别名属性引用', icon: 'ti-align-box-center-stretch' },
+      { type: 'property-ref-block', label: '块属性引用', icon: 'ti-align-box-center-stretch' },
+        { type: 'child-referenced-alias', label: '页面内联别名', icon: 'ti-cube' },
+      { type: 'child-referenced-tag-alias', label: '页面标签', icon: 'ti-hash' },
+      { type: 'child-referenced-inline', label: '页面内联块引用', icon: 'ti-link' },
+      { type: 'backref-alias-blocks', label: '递归直接反链别名属性', icon: 'ti-zoom-question' },
+      { type: 'referencing-alias', label: '直接反链别名', icon: 'ti-arrow-right' },
       { type: 'backref', label: '直接反链块', icon: 'ti-arrow-down' },
       { type: 'recursive-backref', label: '递归反链块', icon: 'ti-arrow-down-right' },
       { type: 'recursive-backref-alias', label: '递归反链别名', icon: 'ti-arrow-right' }
@@ -1679,8 +1679,8 @@ export class PageDisplay {
     return {
       tag: [],
       'referenced-tag': [],
-      referenced: [],
-      'property-ref': [],
+      'property-ref-alias': [],
+      'property-ref-block': [],
       'contained-in': [],
       'inline-ref': [],
       'referencing-alias': [],
@@ -1703,7 +1703,7 @@ export class PageDisplay {
     const result = this.createEmptyGroups()
     const seen = new Set<string>()
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'referenced', 'property-ref', 'contained-in', 'inline-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref']
     for (const type of groupTypes) {
       const groupItems = source[type] ?? []
       for (const item of groupItems) {
@@ -1716,7 +1716,7 @@ export class PageDisplay {
       }
     }
 
-    this.sortReferencedGroup(result.referenced, tagBlockIds, containedInBlockIds)
+    // 删除 referenced 类型后，不再需要排序 referenced 组
 
     return result
   }
@@ -1754,7 +1754,7 @@ export class PageDisplay {
 
   private cloneGroupedItems(grouped: DisplayGroupsMap): DisplayGroupsMap {
     const clone = this.createEmptyGroups()
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'referenced', 'property-ref', 'contained-in', 'inline-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'backref-alias-blocks', 'backref', 'recursive-backref']
     for (const type of groupTypes) {
       clone[type] = [...(grouped[type] ?? [])]
     }
@@ -3130,10 +3130,31 @@ export class PageDisplay {
     itemType: PageDisplayItemType, 
     displayText?: string
   ): Promise<PageDisplayItem> {
-    const finalDisplayText = displayText || 
+    let finalDisplayText = displayText || 
       (block.aliases && block.aliases[0]) || 
       block.text || 
       `块 ${block.id}`
+    
+    // 检查是否为日期块并格式化（仅对特定类型生效）
+    this.log("PageDisplay: Checking if block is date block:", { 
+      blockId: block.id, 
+      text: block.text, 
+      itemType: itemType,
+      properties: block.properties 
+    })
+    
+    // 只对属性引用类型（别名属性引用和块属性引用）进行日期格式化
+    if ((itemType === 'property-ref-alias' || itemType === 'property-ref-block') && this.isDateBlock(block)) {
+      this.log("PageDisplay: Block is property reference and identified as date block, formatting...")
+      const formattedText = this.formatDateBlock(block, finalDisplayText)
+      this.log("PageDisplay: Date formatting result:", { 
+        original: finalDisplayText, 
+        formatted: formattedText 
+      })
+      finalDisplayText = formattedText
+    } else {
+      this.log("PageDisplay: Block is not eligible for date formatting")
+    }
     
     const aliases = block.aliases && block.aliases.length > 0 ? 
       block.aliases : 
@@ -3151,6 +3172,335 @@ export class PageDisplay {
     }
     
     return await this.enhanceItemForSearch(baseItem, block)
+  }
+
+  /**
+   * 检查是否为日期块
+   * @param block 块数据
+   * @returns 是否为日期块
+   */
+  private isDateBlock(block: Block): boolean {
+    this.log("PageDisplay: isDateBlock check for block:", { 
+      id: block.id, 
+      text: block.text, 
+      properties: block.properties 
+    })
+    
+    // 检查块是否有日期相关的属性
+    if (block.properties && block.properties.length > 0) {
+      // 首先检查 _repr 属性中的 date 字段
+      const reprProperty = block.properties.find(prop => prop.name === '_repr')
+      if (reprProperty && reprProperty.value) {
+        this.log("PageDisplay: Found _repr property:", reprProperty.value)
+        if (typeof reprProperty.value === 'object' && reprProperty.value.date) {
+          this.log("PageDisplay: _repr has date field, this is a date block")
+          return true
+        }
+        // 也检查 keyi=12 的情况
+        if (typeof reprProperty.value === 'object' && reprProperty.value.keyi === 12) {
+          this.log("PageDisplay: _repr has keyi=12, this is a date block")
+          return true
+        }
+      }
+      
+      // 检查其他日期相关属性
+      const dateProperties = block.properties.find(prop => 
+        prop.name === 'date' || 
+        prop.name === 'created' || 
+        prop.name === 'modified' ||
+        prop.name === 'time'
+      )
+      if (dateProperties && dateProperties.value) {
+        this.log("PageDisplay: Found date property:", dateProperties)
+        return true
+      }
+    }
+    
+    // 检查文本内容是否包含日期格式
+    if (block.text) {
+      // 匹配常见的日期格式
+      const datePatterns = [
+        /^\d{4}-\d{2}-\d{2}$/, // YYYY-MM-DD
+        /^\d{4}\/\d{2}\/\d{2}$/, // YYYY/MM/DD
+        /^\d{2}-\d{2}-\d{4}$/, // MM-DD-YYYY
+        /^\d{2}\/\d{2}\/\d{4}$/, // MM/DD/YYYY
+        /^\d{4}年\d{1,2}月\d{1,2}日$/, // 中文日期格式
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/, // ISO 8601
+      ]
+      
+      const textMatches = datePatterns.some(pattern => pattern.test(block.text?.trim() || ''))
+      if (textMatches) {
+        this.log("PageDisplay: Text matches date pattern")
+        return true
+      }
+    }
+    
+    this.log("PageDisplay: Block is not identified as date block")
+    return false
+  }
+
+  /**
+   * 格式化日期块
+   * @param block 日期块数据
+   * @param originalText 原始文本
+   * @returns 格式化后的文本
+   */
+  private formatDateBlock(block: Block, originalText: string): string {
+    try {
+      this.log("PageDisplay: formatDateBlock called with:", { 
+        blockId: block.id, 
+        originalText, 
+        properties: block.properties 
+      })
+      
+      // 首先尝试从 _repr 属性中获取格式化的日期
+      if (block.properties && block.properties.length > 0) {
+        const reprProperty = block.properties.find(prop => prop.name === '_repr')
+        if (reprProperty && reprProperty.value) {
+          this.log("PageDisplay: Found _repr property:", reprProperty.value)
+          // 检查 _repr 中是否有 date 字段或 keyi=12 的格式化信息
+          if (typeof reprProperty.value === 'object' && 
+              (reprProperty.value.date || reprProperty.value.keyi === 12)) {
+            this.log("PageDisplay: Found _repr with date field or keyi=12:", reprProperty.value)
+            
+            // 使用 _repr 中的格式化信息
+            const formattedDate = this.formatDateFromRepr(block, reprProperty.value)
+            if (formattedDate) {
+              this.log("PageDisplay: Successfully formatted date from _repr:", formattedDate)
+              return formattedDate
+            }
+          }
+        }
+        
+        // 如果 _repr 没有提供格式化，尝试从其他日期属性中获取日期
+        const dateProperty = block.properties.find(prop => 
+          prop.name === 'date' || 
+          prop.name === 'created' || 
+          prop.name === 'modified' ||
+          prop.name === 'time'
+        )
+        if (dateProperty && dateProperty.value) {
+          this.log("PageDisplay: Found date property:", dateProperty)
+          const date = new Date(dateProperty.value)
+          if (!isNaN(date.getTime())) {
+            const formatted = this.formatDate(date)
+            this.log("PageDisplay: Formatted date from property:", formatted)
+            return formatted
+          }
+        }
+      }
+      
+      // 尝试从文本中解析日期
+      const date = new Date(originalText)
+      if (!isNaN(date.getTime())) {
+        const formatted = this.formatDate(date)
+        this.log("PageDisplay: Formatted date from text:", formatted)
+        return formatted
+      }
+      
+      // 如果无法解析，返回原始文本
+      this.log("PageDisplay: Could not format date, returning original text")
+      return originalText
+    } catch (error) {
+      this.logError("Failed to format date block:", error)
+      return originalText
+    }
+  }
+
+  /**
+   * 从 _repr 属性中格式化日期
+   * @param block 块数据
+   * @param reprValue _repr 属性的值
+   * @returns 格式化后的日期字符串
+   */
+  private formatDateFromRepr(block: Block, reprValue: any): string | null {
+    try {
+      // 检查 _repr 结构并提取日期信息
+      if (reprValue && typeof reprValue === 'object') {
+        this.log("PageDisplay: _repr value:", reprValue)
+        
+        // 首先检查 _repr 中的 date 字段
+        if (reprValue.date) {
+          this.log("PageDisplay: Found date field in _repr:", reprValue.date)
+          const date = new Date(reprValue.date)
+          if (!isNaN(date.getTime())) {
+            const formatted = this.formatDate(date)
+            this.log("PageDisplay: Formatted date from _repr.date:", formatted)
+            return formatted
+          }
+        }
+        
+        // 如果 _repr 包含格式化的日期信息（直接使用）
+        if (reprValue.formatted) {
+          this.log("PageDisplay: Using formatted date from _repr:", reprValue.formatted)
+          return reprValue.formatted
+        }
+        
+        // 如果 _repr 包含样式格式（如 YYYY/MM/DD）
+        if (reprValue.style || reprValue.format) {
+          const style = reprValue.style || reprValue.format
+          this.log("PageDisplay: Found date style format:", style)
+          
+          // 尝试从块的其他属性或文本中获取实际日期值
+          const actualDate = this.extractDateFromBlock(block, reprValue)
+          if (actualDate) {
+            return this.formatDateWithStyle(actualDate, style)
+          }
+        }
+        
+        // 如果 _repr 包含日期值
+        if (reprValue.value) {
+          const date = new Date(reprValue.value)
+          if (!isNaN(date.getTime())) {
+            return this.formatDate(date)
+          }
+        }
+        
+        // 如果 _repr 包含时间戳
+        if (reprValue.timestamp) {
+          const date = new Date(reprValue.timestamp)
+          if (!isNaN(date.getTime())) {
+            return this.formatDate(date)
+          }
+        }
+        
+        // 如果 _repr 本身就是日期格式字符串
+        if (typeof reprValue === 'string') {
+          const date = new Date(reprValue)
+          if (!isNaN(date.getTime())) {
+            return this.formatDate(date)
+          }
+        }
+      }
+      
+      return null
+    } catch (error) {
+      this.logError("Failed to format date from _repr:", error)
+      return null
+    }
+  }
+
+  /**
+   * 从块中提取实际日期值
+   * @param block 块数据
+   * @param reprValue _repr 属性值
+   * @returns 日期对象或 null
+   */
+  private extractDateFromBlock(block: Block, reprValue: any): Date | null {
+    try {
+      // 首先尝试从 _repr 的各个字段中提取日期
+      const possibleDateFields = ['value', 'date', 'timestamp', 'time', 'created', 'modified']
+      
+      for (const field of possibleDateFields) {
+        if (reprValue && reprValue[field]) {
+          const date = new Date(reprValue[field])
+          if (!isNaN(date.getTime())) {
+            this.log(`PageDisplay: Found date in _repr.${field}:`, date)
+            return date
+          }
+        }
+      }
+      
+      // 如果 _repr 中没有日期，尝试从块的其他属性中获取
+      if (block.properties && block.properties.length > 0) {
+        const dateProperty = block.properties.find(prop => 
+          prop.name === 'date' || 
+          prop.name === 'created' || 
+          prop.name === 'modified' ||
+          prop.name === 'time' ||
+          prop.name === 'timestamp'
+        )
+        if (dateProperty && dateProperty.value) {
+          const date = new Date(dateProperty.value)
+          if (!isNaN(date.getTime())) {
+            this.log(`PageDisplay: Found date in block property ${dateProperty.name}:`, date)
+            return date
+          }
+        }
+      }
+      
+      // 最后尝试从块文本中解析日期
+      if (block.text) {
+        const date = new Date(block.text)
+        if (!isNaN(date.getTime())) {
+          this.log("PageDisplay: Found date in block text:", date)
+          return date
+        }
+      }
+      
+      return null
+    } catch (error) {
+      this.logError("Failed to extract date from block:", error)
+      return null
+    }
+  }
+
+  /**
+   * 使用指定样式格式化日期
+   * @param date 日期对象
+   * @param style 样式格式（如 YYYY/MM/DD）
+   * @returns 格式化后的日期字符串
+   */
+  private formatDateWithStyle(date: Date, style: string): string {
+    try {
+      const year = date.getFullYear()
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      const hours = String(date.getHours()).padStart(2, '0')
+      const minutes = String(date.getMinutes()).padStart(2, '0')
+      const seconds = String(date.getSeconds()).padStart(2, '0')
+      
+      // 替换样式中的占位符
+      let formatted = style
+        .replace(/YYYY/g, year.toString())
+        .replace(/MM/g, month)
+        .replace(/DD/g, day)
+        .replace(/HH/g, hours)
+        .replace(/mm/g, minutes)
+        .replace(/ss/g, seconds)
+      
+      this.log("PageDisplay: Formatted date with style:", { original: style, result: formatted })
+      return formatted
+    } catch (error) {
+      this.logError("Failed to format date with style:", error)
+      return this.formatDate(date) // 回退到默认格式化
+    }
+  }
+
+  /**
+   * 格式化日期为可读格式
+   * @param date 日期对象
+   * @returns 格式化后的日期字符串
+   */
+  private formatDate(date: Date): string {
+    const now = new Date()
+    const diffTime = Math.abs(now.getTime() - date.getTime())
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    
+    // 如果是今天
+    if (diffDays === 0) {
+      return `今天 ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+    }
+    
+    // 如果是昨天
+    if (diffDays === 1) {
+      return `昨天 ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+    }
+    
+    // 如果是本周内
+    if (diffDays <= 7) {
+      const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+      return `${weekdays[date.getDay()]} ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+    }
+    
+    // 其他情况显示完整日期
+    return date.toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   }
 
   /**
@@ -3678,8 +4028,8 @@ export class PageDisplay {
     const groupSource: Record<PageDisplayItemType, PageDisplayItem[]> = {
       tag: tagItems, // 只包含子标签
       'referenced-tag': referencedItemsByType['referenced-tag'] || [], // 被引用的标签块
-      referenced: referencedItemsByType['referenced'] || [],
-      'property-ref': referencedItemsByType['property-ref'] || [], // 属性引用块
+      'property-ref-alias': referencedItemsByType['property-ref-alias'] || [], // 别名属性引用
+      'property-ref-block': referencedItemsByType['property-ref-block'] || [], // 块属性引用
       'contained-in': containedInItems,
       'inline-ref': referencedItemsByType['inline-ref'] || [],
       'referencing-alias': referencingAliasItems,
@@ -3695,7 +4045,7 @@ export class PageDisplay {
     const groupedItems = this.buildGroupedItems(groupSource, tagBlockIds, containedInBlockIds)
     const uniqueItems: PageDisplayItem[] = []
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'referenced', 'property-ref', 'contained-in', 'inline-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref']
     for (const type of groupTypes) {
       uniqueItems.push(...groupedItems[type])
     }
@@ -3750,14 +4100,15 @@ export class PageDisplay {
       const isContainedIn = containedInBlockIds.includes(block.id)
       const isPropertyRef = propertyRefIds.includes(block.id)
       
-      // 被引用的块显示条件：必须有别名或文本内容
+      // 被引用的块显示条件：必须有别名或文本内容，但属性引用块例外
       const hasName = (block.aliases && block.aliases.length > 0) || block.text
+      const isPropertyRefBlock = isPropertyRef
       
-      if (hasName) {
-        const displayText = (block.aliases && block.aliases[0]) || block.text || `被引用块 ${block.id}`
+      if (hasName || isPropertyRefBlock) {
+        const displayText = (block.aliases && block.aliases[0]) || block.text || (isPropertyRefBlock ? `属性引用块 ${block.id}` : `被引用块 ${block.id}`)
         
         // 根据引用类型确定itemType
-        let itemType: PageDisplayItemType = 'referenced'
+        let itemType: PageDisplayItemType
         if (isTagBlock) {
           itemType = 'referenced-tag' // 被引用的标签块
         } else if (isContainedIn) {
@@ -3767,12 +4118,19 @@ export class PageDisplay {
         } else if (isInlineRef) {
           itemType = 'inline-ref' // 内联引用
         } else if (isPropertyRef) {
-          // 属性引用块单独分类
-          itemType = 'property-ref' // 属性引用块
-          this.log(`PageDisplay: 设置为属性引用块 (property-ref) - ${block.id}: ${displayText}`)
+          // 属性引用块根据是否有别名分类
+          const hasAlias = block.aliases && block.aliases.length > 0
+          if (hasAlias) {
+            itemType = 'property-ref-alias' // 别名属性引用
+            this.log(`PageDisplay: 设置为别名属性引用 (property-ref-alias) - ${block.id}: ${displayText}`)
+          } else {
+            itemType = 'property-ref-block' // 块属性引用
+            this.log(`PageDisplay: 设置为块属性引用 (property-ref-block) - ${block.id}: ${displayText}`)
+          }
         } else {
-          itemType = 'referenced' // 默认情况
-          this.log(`PageDisplay: 设置为普通被引用块 (referenced) - ${block.id}: ${displayText}`)
+          // 如果都不匹配，跳过这个块
+          this.log(`PageDisplay: 跳过未分类的引用块 - ${block.id}: ${displayText}`)
+          continue
         }
         
         const enhancedItem = await this.createPageDisplayItem(block, itemType, displayText)
@@ -4770,14 +5128,14 @@ export class PageDisplay {
               icon.className = 'page-display-item-icon ti ti-hash'
             } else if (item.itemType === 'referenced-tag') {
               // 被引用的标签块图标
-              this.log(`PageDisplay: 分配被引用标签块图标 (ti-hash) - ${item.text}`)
-              icon.className = 'page-display-item-icon ti ti-hash'
-            } else if (item.itemType === 'referenced') {
-              // 被引用块图标（当前块引用了这个块）
-              this.log(`PageDisplay: 分配上箭头图标 (ti-arrow-up) - ${item.text}`)
+              this.log(`PageDisplay: 分配被引用标签块图标 (ti-arrow-up) - ${item.text}`)
               icon.className = 'page-display-item-icon ti ti-arrow-up'
-            } else if (item.itemType === 'property-ref') {
-              // 属性引用块图标
+            } else if (item.itemType === 'property-ref-alias') {
+              // 别名属性引用图标
+              this.log(`PageDisplay: 分配对齐图标 (ti-align-box-center-stretch) - ${item.text}`)
+              icon.className = 'page-display-item-icon ti ti-align-box-center-stretch'
+            } else if (item.itemType === 'property-ref-block') {
+              // 块属性引用图标
               this.log(`PageDisplay: 分配对齐图标 (ti-align-box-center-stretch) - ${item.text}`)
               icon.className = 'page-display-item-icon ti ti-align-box-center-stretch'
             } else if (item.itemType === 'contained-in') {
