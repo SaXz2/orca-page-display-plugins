@@ -6116,7 +6116,7 @@ const typeConfigs = [
     
     const searchInput = document.createElement('input')
     searchInput.type = 'text'
-    searchInput.placeholder = '搜索页面、标签、属性... (支持拼音和多关键词)'
+    searchInput.placeholder = '搜索页面、标签、属性... (支持拼音、多关键词、OR逻辑: 项目|会议)'
     searchInput.className = 'page-display-search-input'
     this.applyStyles(searchInput, 'page-display-search-input')
     
@@ -6129,20 +6129,33 @@ const typeConfigs = [
         return originalItems
       }
       
-      // 分割搜索词，支持多关键词搜索
-      const keywords = searchTerm.toLowerCase().split(/\s+/).filter(k => k.length > 0)
-      
-      const filteredItems = originalItems.filter(item => {
-        // 如果只有一个关键词，使用 OR 逻辑（任一字段匹配）
-        if (keywords.length === 1) {
-          return matchesItem(item, keywords[0])
-        }
+      // 检查是否包含OR逻辑（使用|分隔符）
+      if (searchTerm.includes('|')) {
+        // 支持OR逻辑：使用|分隔符
+        const orKeywords = searchTerm.toLowerCase().split('|').map(k => k.trim()).filter(k => k.length > 0)
         
-        // 多个关键词使用 AND 逻辑（所有关键词都要匹配）
-        return keywords.every(keyword => matchesItem(item, keyword))
-      })
-      
-      return filteredItems
+        const filteredItems = originalItems.filter(item => {
+          // OR逻辑：任一关键词匹配即可
+          return orKeywords.some(keyword => matchesItem(item, keyword))
+        })
+        
+        return filteredItems
+      } else {
+        // 原有的AND逻辑：使用空格分隔符
+        const keywords = searchTerm.toLowerCase().split(/\s+/).filter(k => k.length > 0)
+        
+        const filteredItems = originalItems.filter(item => {
+          // 如果只有一个关键词，使用 OR 逻辑（任一字段匹配）
+          if (keywords.length === 1) {
+            return matchesItem(item, keywords[0])
+          }
+          
+          // 多个关键词使用 AND 逻辑（所有关键词都要匹配）
+          return keywords.every(keyword => matchesItem(item, keyword))
+        })
+        
+        return filteredItems
+      }
     }
     
     // 简化的搜索匹配逻辑（支持拼音搜索）
