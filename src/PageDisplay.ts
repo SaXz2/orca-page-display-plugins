@@ -5501,6 +5501,12 @@ const typeConfigs = [
     
     // 使用懒加载渲染项目列表
     const renderItemsWithLazyLoading = (list: HTMLElement, items: PageDisplayItem[], searchInput: HTMLInputElement, tagBlockIds: DbId[], inlineRefIds: DbId[], containedInBlockIds: DbId[]) => {
+      // 检查页面是否处于折叠状态，如果折叠则不进行懒加载
+      if (this.getCurrentPageCollapseState()) {
+        this.log("PageDisplay: 页面处于折叠状态，跳过懒加载")
+        return
+      }
+
       // 清理之前的观察器
       if (this.scrollObserver) {
         this.scrollObserver.disconnect()
@@ -5533,6 +5539,12 @@ const typeConfigs = [
     
     // 添加滚动加载触发器（隐藏）
     const addScrollLoadTrigger = (list: HTMLElement, items: PageDisplayItem[], searchInput: HTMLInputElement, tagBlockIds: DbId[], inlineRefIds: DbId[], containedInBlockIds: DbId[]) => {
+      // 检查页面是否处于折叠状态，如果折叠则不创建触发器
+      if (this.getCurrentPageCollapseState()) {
+        this.log("PageDisplay: 页面处于折叠状态，跳过创建滚动触发器")
+        return
+      }
+
       // 创建隐藏的加载触发器元素
       const loadTrigger = document.createElement('li')
       loadTrigger.className = 'page-display-scroll-trigger'
@@ -5549,6 +5561,12 @@ const typeConfigs = [
         (entries) => {
           entries.forEach((entry) => {
             if (entry.isIntersecting) {
+              // 再次检查折叠状态，防止在观察过程中页面被折叠
+              if (this.getCurrentPageCollapseState()) {
+                this.log("PageDisplay: 页面已折叠，取消懒加载")
+                return
+              }
+              
               // 当触发器进入视口时，加载下一批
               this.currentBatch++
               
@@ -5699,7 +5717,15 @@ const typeConfigs = [
         itemElement.addEventListener('click', (e) => {
           e.preventDefault()
           e.stopPropagation()
-          this.openBlock(item.id)
+          
+          // 检查是否按下了Shift键
+          if (e.shiftKey) {
+            // Shift+点击：在侧面板打开
+            this.openBlockInSidePanel(item.id)
+          } else {
+            // 普通点击：在当前面板打开
+            this.openBlock(item.id)
+          }
         })
 
         list.appendChild(itemElement)
@@ -6204,6 +6230,24 @@ const typeConfigs = [
         errorStack
       })
       orca.notify("error", `打开块失败: ${errorMessage}`)
+    }
+  }
+
+  /**
+   * 在侧面板中打开指定的块
+   * @param blockId 块ID
+   */
+  private openBlockInSidePanel(blockId: DbId): void {
+    this.log(`PageDisplay: Opening block ${blockId} in side panel`)
+    
+    try {
+      // 使用orca.nav.openInLastPanel在侧面板打开块
+      orca.nav.openInLastPanel("block", { blockId })
+      this.log(`PageDisplay: Successfully opened block ${blockId} in side panel`)
+    } catch (error) {
+      console.error("PageDisplay: Failed to open block in side panel:", error)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      orca.notify("error", `在侧面板打开块失败: ${errorMessage}`)
     }
   }
 

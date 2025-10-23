@@ -8,6 +8,72 @@
 
 This document will guide you through all available backend API calls, which can be invoked using `orca.invokeBackend`.
 
+## change-tag-property-choice
+
+Changes a single/multi choice property value across all blocks that use it.
+
+Parameters:
+
+- tagBlockId - The ID of the tag block (DbId / number).
+- propName - The property name (string).
+- oldChoice - The current choice value to replace (string).
+- newChoice - The new choice value (string).
+
+Returns:
+
+An array of updated blocks that had the choice value changed.
+
+Example:
+
+```ts
+// Change a choice value from "In Progress" to "In Development"
+// for all blocks using this tag property
+const updatedBlocks = await orca.invokeBackend(
+  "change-tag-property-choice",
+  tagBlockId,
+  "status",
+  "In Progress",
+  "In Development",
+)
+
+// Update frontend state with the modified blocks
+for (const block of updatedBlocks) {
+  orca.state.blocks[block.id] = block
+}
+```
+
+## export-png
+
+Exports the specified block as a PNG image file.
+
+Parameters:
+
+- repoId - Repository identifier (string).
+- blockId - The ID of the block (DbId / number).
+- proposedWidth - Proposed width (number, in pixels) for the exported image.
+- force2x - Controls whether the output image has high resolution.
+
+Returns:
+
+On success returns a tuple `[true, string]` where the second element is the exported file path; on failure returns `[false, Error]` or an Error-like value.
+
+Example:
+
+```ts
+// Request backend to export a block as PNG with a width of 1200px
+const [ok, result] = await orca.invokeBackend(
+  "export-png",
+  "my-repo",
+  12345,
+  1200,
+)
+if (ok) {
+  console.log("Exported PNG:", result) // result = path to saved PNG
+} else {
+  console.error("Export failed:", result)
+}
+```
+
 ## get-aliased-blocks
 
 Retrieves all blocks with the specified alias.

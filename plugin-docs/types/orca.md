@@ -497,7 +497,7 @@ orca.blockMenuCommands.registerBlockMenuCommand("myplugin.exportBlock", {
   )
 })
 
-// Command that works on multiple blocks
+// Command that works on multiple selected blocks
 orca.blockMenuCommands.registerBlockMenuCommand("myplugin.mergeBlocks", {
   worksOnMultipleBlocks: true,
   render: (blockIds, rootBlockId, close) => (
@@ -534,7 +534,7 @@ The identifier of the block menu command to unregister
 ###### Example
 
 ```ts
-// When unloading the plugin
+// When unloading a plugin
 orca.blockMenuCommands.unregisterBlockMenuCommand("myplugin.exportBlock")
 ```
 
@@ -1504,7 +1504,7 @@ Core component for block rendering with common UI elements
 
 `any`
 
-###### dropppable?
+###### droppable?
 
 `boolean`
 
@@ -1796,7 +1796,7 @@ Displays a confirmation dialog
     close();
   }}
 >
-  {(open, close) => (
+  {(open) => (
     <orca.components.Button variant="dangerous" onClick={open}>
       Delete
     </orca.components.Button>
@@ -2097,7 +2097,7 @@ Context menu that appears on hover
     </orca.components.Menu>
   )}
 >
-  <i className="ti ti-info" />
+  <i className="ti ti-info-circle" />
 </orca.components.HoverContextMenu>
 ```
 
@@ -3516,6 +3516,108 @@ orca.converters.registerBlock(
 )
 ```
 
+##### editorSidetools
+
+> **editorSidetools**: `object`
+
+Editor sidetools API for adding custom tools to the block editor's sidebar.
+This allows plugins to add custom utilities and functionality in the editor sidebar.
+
+###### registerEditorSidetool()
+
+> **registerEditorSidetool**(`id`, `tool`): `void`
+
+Registers a custom tool in the editor sidebar.
+
+###### Parameters
+
+###### id
+
+`string`
+
+A unique identifier for the sidetool
+
+###### tool
+
+[`EditorSidetool`](#editorsidetool)
+
+The sidetool configuration with a render function
+
+###### Returns
+
+`void`
+
+###### Example
+
+```tsx
+// Register a custom sidetool
+orca.editorSidetools.registerEditorSidetool("myplugin.outlineViewer", {
+  render: (rootBlockId, panelId) => (
+    <Tooltip
+      text={t("Outline Viewer")}
+      shortcut={orca.state.shortcuts["toggleOutlineViewer"]}
+      placement="horizontal"
+    >
+      <Button
+        className={`orca-block-editor-sidetools-btn ${isViewerOpened ? "orca-opened" : ""}`}
+        variant="plain"
+        onClick={toggleOutlineViewer}
+      >
+        <i className="ti ti-align-justified" />
+      </Button>
+    </Tooltip>
+  )
+})
+```
+
+###### unregisterEditorSidetool()
+
+> **unregisterEditorSidetool**(`id`): `void`
+
+Unregisters a previously registered editor sidetool.
+
+###### Parameters
+
+###### id
+
+`string`
+
+The identifier of the editor sidetool to unregister
+
+###### Returns
+
+`void`
+
+###### Example
+
+```ts
+// When unloading a plugin
+orca.editorSidetools.unregisterEditorSidetool("myplugin.outlineViewer")
+```
+
+###### Example
+
+```ts
+// Register a custom sidetool
+orca.editorSidetools.registerEditorSidetool("myplugin.outlineViewer", {
+  render: (rootBlockId, panelId) => (
+    <Tooltip
+      text={t("Outline Viewer")}
+      shortcut={orca.state.shortcuts["toggleOutlineViewer"]}
+      placement="horizontal"
+    >
+      <Button
+        className={`orca-block-editor-sidetools-btn ${isViewerOpened ? "orca-opened" : ""}`}
+        variant="plain"
+        onClick={toggleOutlineViewer}
+      >
+        <i className="ti ti-align-justified" />
+      </Button>
+    </Tooltip>
+  )
+})
+```
+
 ##### headbar
 
 > **headbar**: `object`
@@ -4496,7 +4598,7 @@ Renderer management API, used to register custom block and inline content render
 
 ###### registerBlock()
 
-> **registerBlock**(`type`, `isEditable`, `renderer`, `assetFields`?): `void`
+> **registerBlock**(`type`, `isEditable`, `renderer`, `assetFields`?, `useChildren`?): `void`
 
 Registers a custom block renderer.
 
@@ -4527,6 +4629,16 @@ The React component that renders the block
 Optional array of property names that may contain asset references
                     (used for proper asset handling during import/export)
 
+###### useChildren?
+
+`boolean` = `false`
+
+Whether this block type uses the children for rendering.
+                     When true, the block's children will be passed to the renderer component
+                     for custom rendering instead of being rendered by the default children renderer.
+                     This is useful for blocks that need to control how their children are displayed
+                     (e.g., custom layouts, tabs, or accordion blocks).
+
 ###### Returns
 
 `void`
@@ -4549,6 +4661,15 @@ orca.renderers.registerBlock(
   true,
   AttachmentBlock,
   ["url", "thumbnailUrl"]
+)
+
+// Register a block renderer that uses children for custom layout
+orca.renderers.registerBlock(
+  "myplugin.tabs",
+  false,
+  TabsBlock,
+  undefined,
+  true  // useChildren flag
 )
 ```
 
@@ -4809,7 +4930,7 @@ The identifier of the slash command to unregister
 ###### Example
 
 ```ts
-// When unloading the plugin
+// When unloading a plugin
 orca.slashCommands.unregisterSlashCommand("myplugin.insertChart")
 ```
 
@@ -4951,6 +5072,20 @@ This is where Orca stores configuration and other application-level data.
 
 ```ts
 console.log(`Application data directory: ${orca.state.dataDir}`)
+```
+
+###### editorSidetools
+
+> **editorSidetools**: `Record`\<`string`, `undefined` \| [`EditorSidetool`](#editorsidetool)\>
+
+Registry of editor sidetools that appear in the block editor's sidebar.
+These tools provide additional functionality in the editor sidebar.
+
+###### Example
+
+```ts
+// Check if a specific editor sidetool is registered
+const hasTocTool = !!orca.state.editorSidetools["myplugin.toc"]
 ```
 
 ###### filterInTags?
@@ -5345,7 +5480,7 @@ The identifier of the tag menu command to unregister
 ###### Example
 
 ```ts
-// When unloading the plugin
+// When unloading a plugin
 orca.tagMenuCommands.unregisterTagMenuCommand("myplugin.exportTaggedBlocks")
 ```
 
@@ -6044,6 +6179,26 @@ The block types to match or not match
 
 ***
 
+### QueryBlockMatch2
+
+Query condition that matches specific blocks by their ID.
+
+#### Properties
+
+##### blockId?
+
+> `optional` **blockId**: `number`
+
+ID of the specific block to match
+
+##### kind
+
+> **kind**: `12`
+
+Kind identifier for block match queries (12)
+
+***
+
 ### QueryDescription
 
 Describes a query for searching and filtering blocks.
@@ -6278,9 +6433,9 @@ Array of conditions within this group
 
 ##### kind
 
-> **kind**: `100` \| `101` \| `102` \| `103` \| `104` \| `105`
+> **kind**: `100` \| `101` \| `102` \| `103` \| `104` \| `105` \| `106`
 
-Kind of group: self/ancestor/descendant
+Kind of group: self/ancestor/descendant/chain
 
 ##### negate?
 
@@ -6906,7 +7061,7 @@ Called after a command has been executed.
 
 ### APIMsg
 
-> **APIMsg** = `"get-aliased-blocks"` \| `"get-aliases"` \| `"get-aliases-ids"` \| `"get-block"` \| `"get-block-by-alias"` \| `"get-blockid-by-alias"` \| `"get-blocks"` \| `"get-blocks-with-tags"` \| `"get-block-tree"` \| `"get-children-tags"` \| `"get-children-tag-blocks"` \| `"get-journal-block"` \| `"get-remindings"` \| `"get-tags"` \| `"query"` \| `"search-aliases"` \| `"search-blocks-by-text"` \| `"set-app-config"` \| `"set-config"` \| `"shell-open"` \| `"show-in-folder"` \| `"upload-asset-binary"` \| `"upload-assets"` \| `"image-ocr"` \| `string`
+> **APIMsg** = `"change-tag-property-choice"` \| `"export-png"` \| `"get-aliased-blocks"` \| `"get-aliases"` \| `"get-aliases-ids"` \| `"get-block"` \| `"get-block-by-alias"` \| `"get-blockid-by-alias"` \| `"get-blocks"` \| `"get-blocks-with-tags"` \| `"get-block-tree"` \| `"get-children-tags"` \| `"get-journal-block"` \| `"get-remindings"` \| `"query"` \| `"search-aliases"` \| `"search-blocks-by-text"` \| `"set-app-config"` \| `"set-config"` \| `"shell-open"` \| `"show-in-folder"` \| `"upload-asset-binary"` \| `"upload-assets"` \| `"image-ocr"` \| `string`
 
 Supported backend API message types for communicating with the Orca backend.
 These message types are used with the `invokeBackend` method to perform
@@ -7044,7 +7199,7 @@ Simplified type for block reference data.
 
 ### BlockRenderingMode
 
-> **BlockRenderingMode** = `"normal"` \| `"relative"` \| `"simple"` \| `"simple-children"`
+> **BlockRenderingMode** = `"normal"` \| `"simple"` \| `"simple-children"`
 
 Block rendering modes
 
@@ -7149,6 +7304,37 @@ These commands support undo/redo functionality by returning undo arguments.
 
 ***
 
+### EditorSidetool
+
+> **EditorSidetool** = `object`
+
+Configuration for an editor sidetool that appears in the block editor's sidebar.
+Sidetools provide additional functionality and utilities in the editor sidebar.
+
+#### Properties
+
+##### render()
+
+> **render**: (`rootBlockId`, `panelId`) => `React.ReactNode`
+
+Function to render the sidetool, receiving the root block ID and panel ID.
+
+###### Parameters
+
+###### rootBlockId
+
+[`DbId`](#dbid)
+
+###### panelId
+
+`string`
+
+###### Returns
+
+`React.ReactNode`
+
+***
+
 ### PanelView
 
 > **PanelView** = `"journal"` \| `"block"`
@@ -7214,7 +7400,7 @@ Each item represents a different type of condition that can be used in queries.
 
 ### QueryItem2
 
-> **QueryItem2** = [`QueryGroup2`](#querygroup2) \| [`QueryText2`](#querytext2) \| [`QueryTag2`](#querytag2) \| [`QueryRef2`](#queryref2) \| [`QueryJournal2`](#queryjournal2) \| [`QueryBlock2`](#queryblock2) \| [`QueryTask`](#querytask)
+> **QueryItem2** = [`QueryGroup2`](#querygroup2) \| [`QueryText2`](#querytext2) \| [`QueryTag2`](#querytag2) \| [`QueryRef2`](#queryref2) \| [`QueryJournal2`](#queryjournal2) \| [`QueryBlock2`](#queryblock2) \| [`QueryBlockMatch2`](#queryblockmatch2) \| [`QueryTask`](#querytask)
 
 Union type representing all possible query condition items.
 Each item represents a different type of condition that can be used in queries.
@@ -7270,6 +7456,23 @@ All conditions must match for the group to match.
 
 Constant for the block query type.
 Matches blocks according to their properties.
+
+***
+
+### QueryKindBlockMatch
+
+> **QueryKindBlockMatch** = `12`
+
+Constant for the block match query type.
+Matches specific blocks by their ID.
+
+***
+
+### QueryKindChainAnd
+
+> **QueryKindChainAnd** = `106`
+
+Constant for the chain AND group type.
 
 ***
 
