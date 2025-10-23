@@ -38,7 +38,7 @@ jobs:
           
           # 复制核心文件
           cp -r dist "$PLUGIN_DIR/"
-          cp icon.png "$PLUGIN_DIR/"
+          cp icon.svg "$PLUGIN_DIR/"
           cp package.json "$PLUGIN_DIR/"
           cp README.md "$PLUGIN_DIR/"
           cp LICENSE "$PLUGIN_DIR/"
@@ -59,7 +59,7 @@ jobs:
             ## 📦 插件包内容
             
             - `dist/index.js` - 编译后的插件文件
-            - `icon.png` - 插件图标
+            - `icon.svg` - 插件图标
             - `package.json` - 项目配置
             - `README.md` - 使用文档
             - `LICENSE` - 许可证

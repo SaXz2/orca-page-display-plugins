@@ -15,7 +15,7 @@ orca/
 └── plugins/
     └── orca-tabs-plugin-1.0.0/
         ├── dist/
-        ├── icon.png
+        ├── icon.svg
         ├── LICENSE
         ├── package.json
         └── README.md
