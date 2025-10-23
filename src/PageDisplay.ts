@@ -6680,7 +6680,7 @@ const typeConfigs = [
       filteredItems = this.applyDateFilter(filteredItems)
       this.log(`PageDisplay: 日期过滤前: ${beforeDateFilterCount} 项, 日期过滤后: ${filteredItems.length} 项`)
       
-      // 对过滤后的项目按创建时间降序排序
+      // 对过滤后的项目进行置顶排序：包含于块(非子标签)置顶显示
       filteredItems = filteredItems.sort((a, b) => {
         const aIsContainedIn = containedInBlockIds.includes(a.id)
         const bIsContainedIn = containedInBlockIds.includes(b.id)
@@ -6695,10 +6695,7 @@ const typeConfigs = [
         if (aIsContainedInNotTag && !bIsContainedInNotTag) return -1
         if (!aIsContainedInNotTag && bIsContainedInNotTag) return 1
         
-        // 其他按创建时间降序排序
-        const aCreated = a.created || 0
-        const bCreated = b.created || 0
-        return bCreated - aCreated  // 降序：新的在前
+        return 0  // 其他保持原顺序
       })
       
       // 更新页面统计
