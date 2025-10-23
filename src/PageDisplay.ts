@@ -312,20 +312,22 @@ class StyleManager {
   }
 
   /**
-   * 获取统一的颜色规范
+   * 获取统一的颜色规范 - 使用Orca原生变量
    */
   private getColors() {
-    const isDarkMode = this.isDarkMode()
     return {
-      text: isDarkMode ? '#e8e8e8' : '#333333',
-      textSecondary: isDarkMode ? '#b8b8b8' : '#666666',
-      textMuted: isDarkMode ? '#888888' : '#999999',
-      border: isDarkMode ? '#3a3a3a' : '#e0e0e0',
-      background: isDarkMode ? '#1e1e1e' : '#ffffff',
-      backgroundHover: isDarkMode ? '#2d2d2d' : '#f5f5f5',
-      backgroundSubtle: isDarkMode ? '#252525' : '#fafafa',
-      highlightBg: isDarkMode ? '#ffd700' : '#ffeb3b',
-      highlightText: isDarkMode ? '#000000' : '#000000'
+      text: 'var(--orca-color-text-1)',
+      textSecondary: 'var(--orca-color-text-2)',
+      textMuted: 'var(--orca-color-text-2)',
+      border: 'var(--orca-color-border)',
+      background: 'var(--orca-color-bg-1)',
+      backgroundHover: 'var(--orca-color-bg-2)',
+      backgroundSubtle: 'var(--orca-color-bg-3)',
+      highlightBg: 'var(--orca-color-result-highlight)',
+      highlightText: 'var(--orca-color-text-1)',
+      primary: 'var(--orca-color-primary-5)',
+      primaryLight: 'var(--orca-color-primary-3)',
+      primaryBg: 'var(--orca-color-primary-1)'
     }
   }
 
@@ -354,7 +356,6 @@ class StyleManager {
       'page-display-item-icon',
       'page-display-item-text',
       'page-display-highlight',
-      'page-display-query-list-toggle',
       'page-display-query-list-hidden'
     ]
     
@@ -368,289 +369,70 @@ class StyleManager {
   }
 
   /**
-   * 根据类名应用具体样式
+   * 根据类名应用具体样式 - 优化为只添加CSS类名
    */
   private applyClassStyles(element: HTMLElement, className: string) {
-    const colors = this.getColors()
+    // 现在只添加CSS类名，样式由CSS文件处理
+    // 这样可以更好地维护样式，避免内联样式的问题
     
     switch (className) {
       case 'page-display-container':
-        element.style.cssText = `
-          margin: 8px 0;
-          padding: 8px 12px;
-          background: transparent;
-          border: none;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          font-size: 14px;
-          line-height: 1.5;
-          color: ${colors.text};
-          max-width: 100%;
-          width: 100%;
-          box-sizing: border-box;
-          overflow: hidden;
-        `
+        // 不需要设置内联样式，CSS文件已经处理了所有样式
         break
         
       case 'page-display-title-container':
-        element.style.cssText = `
-          display: flex;
-          align-items: center;
-          margin-bottom: 8px;
-          cursor: pointer;
-          justify-content: space-between;
-          flex-wrap: wrap;
-          gap: 4px;
-        `
+        // 不需要设置内联样式，CSS文件已经处理了所有样式
         break
         
       case 'page-display-left-content':
-        element.style.cssText = `
-          display: flex;
-          align-items: center;
-          flex: 1;
-          min-width: 0;
-        `
+        // CSS文件已处理
         break
         
       case 'page-display-arrow':
-        element.style.cssText = `
-          margin-right: 6px;
-          font-size: 10px;
-          color: ${colors.textMuted};
-          transition: transform 0.2s ease;
-          transform: rotate(0deg);
-          width: 12px;
-          height: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        `
+        // CSS文件已处理
         break
         
       case 'page-display-title':
-        element.style.cssText = `
-          font-weight: 500;
-          color: ${colors.text};
-          font-size: 15px;
-        `
+        // CSS文件已处理
         break
         
       case 'page-display-count':
-        element.style.cssText = `
-          margin-left: 8px;
-          font-size: 12px;
-          color: ${colors.textMuted};
-          font-weight: normal;
-        `
+        // CSS文件已处理
         break
         
       case 'page-display-search-icon':
-        element.style.cssText = `
-          width: 24px;
-          height: 24px;
-          background: ${colors.background};
-          border: 1px solid ${colors.border};
-          border-radius: 4px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          margin-left: 4px;
-          flex-shrink: 0;
-          font-size: 12px;
-          color: ${colors.textMuted};
-          transition: all 0.15s ease;
-          user-select: none;
-        `
+        // CSS文件已处理
         break
         
       case 'page-display-filter-icon':
-        element.style.cssText = `
-          width: 24px;
-          height: 24px;
-          background: ${colors.background};
-          border: 1px solid ${colors.border};
-          border-radius: 4px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          margin-left: 4px;
-          flex-shrink: 0;
-          font-size: 12px;
-          color: ${colors.textMuted};
-          transition: all 0.15s ease;
-          user-select: none;
-        `
-        break
-        
       case 'page-display-icons-toggle-icon':
       case 'page-display-multiline-toggle-icon':
       case 'page-display-multicolumn-toggle-icon':
-        element.style.cssText = `
-          width: 24px;
-          height: 24px;
-          background: ${colors.background};
-          border: 1px solid ${colors.border};
-          border-radius: 4px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          margin-left: 4px;
-          flex-shrink: 0;
-          font-size: 12px;
-          color: ${colors.textMuted};
-          transition: all 0.15s ease;
-          user-select: none;
-        `
+        // CSS文件已处理
         break
         
       case 'page-display-search-container':
-        element.style.cssText = `
-          margin-bottom: 12px;
-          display: none;
-          opacity: 0;
-          max-height: 0;
-          overflow: hidden;
-          transition: opacity 0.2s ease, max-height 0.2s ease;
-        `
+        // CSS文件已处理
         break
         
       case 'page-display-search-input':
-        element.style.cssText = `
-          width: 100%;
-          padding: 8px 12px;
-          border: 1px solid ${colors.border};
-          border-radius: 6px;
-          font-size: 14px;
-          outline: none;
-          background: ${colors.background};
-          color: ${colors.text};
-          box-sizing: border-box;
-          transition: border-color 0.2s ease, box-shadow 0.2s ease;
-        `
-        
-        // 添加焦点样式
-        element.addEventListener('focus', () => {
-          const isDarkMode = this.isDarkMode()
-          element.style.borderColor = isDarkMode ? '#4a9eff' : '#007bff'
-          element.style.boxShadow = isDarkMode ? '0 0 0 2px rgba(74, 158, 255, 0.2)' : '0 0 0 2px rgba(0, 123, 255, 0.25)'
-        })
-        
-        element.addEventListener('blur', () => {
-          element.style.borderColor = colors.border
-          element.style.boxShadow = 'none'
-        })
+        // CSS文件已处理，包括焦点样式
         break
         
       case 'page-display-list':
-        element.style.cssText = `
-          list-style: none;
-          padding: 0;
-          margin: 0;
-          max-height: 250px;
-          overflow-y: auto;
-          overflow-x: hidden;
-          scrollbar-width: thin;
-          scrollbar-color: ${this.isDarkMode() ? '#4a4a4a' : '#c0c0c0'} transparent;
-          width: 100%;
-          box-sizing: border-box;
-        `
-        
-        // 添加 WebKit 滚动条样式
-        this.addScrollbarStyles()
+        // CSS文件已处理，包括滚动条样式
         break
         
       case 'page-display-item':
-        element.style.cssText = `
-          position: relative;
-          padding: 2px 0 2px 16px;
-          cursor: pointer;
-          color: ${colors.text};
-          font-size: 14px;
-          line-height: 1.4;
-          transition: background-color 0.2s ease;
-          display: flex;
-          align-items: center;
-          width: 100%;
-          box-sizing: border-box;
-          overflow: hidden;
-        `
+        // CSS文件已处理
         break
         
       case 'page-display-item-icon':
-        element.style.cssText = `
-          position: absolute;
-          left: 0;
-          top: 50%;
-          transform: translateY(-50%);
-          font-size: 12px;
-          color: ${colors.textMuted};
-          width: 14px;
-          height: 14px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        `
-        break
-        
       case 'page-display-item-text':
-        element.style.cssText = `
-          color: ${colors.text};
-          font-weight: normal;
-          line-height: 1.5;
-          flex: 1;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          min-width: 0;
-        `
-        break
-        
       case 'page-display-highlight':
-        element.style.cssText = `
-          background-color: ${colors.highlightBg} !important;
-          color: ${colors.highlightText} !important;
-          padding: 1px 2px;
-          border-radius: 2px;
-          font-weight: 500;
-          display: inline;
-        `
+        // CSS文件已处理
         break
         
-      case 'page-display-query-list-toggle':
-        element.style.cssText = `
-          width: 28px;
-          height: 28px;
-          background: ${colors.background};
-          border: 1px solid ${colors.border};
-          border-radius: 4px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          margin-left: 8px;
-          opacity: 0;
-          transition: all 0.2s ease;
-          flex-shrink: 0;
-          font-size: 14px;
-          color: ${colors.textMuted};
-        `
-        
-        // 添加悬停效果
-        element.addEventListener('mouseenter', () => {
-          element.style.opacity = '1'
-          element.style.background = colors.backgroundHover
-          element.style.color = colors.text
-        })
-        
-        element.addEventListener('mouseleave', () => {
-          element.style.opacity = '0'
-          element.style.background = colors.background
-          element.style.color = colors.textMuted
-        })
-        break
         
     }
   }
@@ -874,8 +656,6 @@ interface GatheredData {
 export class PageDisplay {
   /** 多面板支持：存储每个面板的显示容器，key为面板标识 */
   private containers: Map<string, HTMLElement> = new Map()
-  /** 多面板支持：存储每个面板的查询列表切换按钮 */
-  private queryListToggleButtons: Map<string, HTMLElement> = new Map()
   /** 多面板支持：存储每个面板的状态，包括搜索内容、展开状态等 */
   private panelStates: Map<string, PanelState> = new Map()
   /** 插件名称，用于数据存储和API调用 */
@@ -928,8 +708,6 @@ export class PageDisplay {
   // === 状态管理属性 ===
   /** 缓存上次的根块ID，用于避免重复更新 */
   private lastRootBlockId: DbId | null = null
-  /** 控制查询列表是否隐藏 */
-  private queryListHidden: boolean = false
   /** 控制反链别名块查询是否开启，默认关闭 */
   private backrefAliasQueryEnabled: boolean = true
   /** 防抖定时器，避免频繁更新 */
@@ -946,8 +724,6 @@ export class PageDisplay {
   private periodicCheckInterval: number | null = null
   /** 页面切换检查定时器 */
   private pageSwitchCheckInterval: number | null = null
-  /** DOM变化监听器，用于监听新出现的查询列表元素 */
-  private mutationObserver: MutationObserver | null = null
 
   // === 错误处理和重试属性 ===
   /** 当前重试次数 */
@@ -1900,13 +1676,22 @@ const typeConfigs = [
     panel.className = 'page-display-date-filter-panel'
     this.applyStyles(panel, 'page-display-date-filter-panel')
     
-    // 设置初始显示状态和透明度过渡
+    // 设置初始显示状态和透明度过渡，使用虎鲸笔记原生样式变量
     panel.style.cssText = `
       display: ${this.showDateFilters ? 'block' : 'none'};
       opacity: ${this.showDateFilters ? '1' : '0'};
       visibility: ${this.showDateFilters ? 'visible' : 'hidden'};
       transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
       transform: translateY(${this.showDateFilters ? '0' : '-10px'});
+      background: var(--orca-color-bg-1);
+      border: var(--orca-border-general);
+      border-radius: var(--orca-radius-lg);
+      box-shadow: var(--orca-shadow-popup);
+      padding: var(--orca-spacing-lg);
+      min-width: 300px;
+      z-index: var(--orca-zindex-modal);
+      font-family: var(--orca-fontfamily-ui);
+      color: var(--orca-color-text-1);
     `
     
     // 创建面板标题和按钮容器
@@ -1914,13 +1699,14 @@ const typeConfigs = [
     titleContainer.className = 'page-display-date-filter-title-container'
     this.applyStyles(titleContainer, 'page-display-date-filter-title-container')
     
-    // 设置flex布局，标题在左，按钮在右
+    // 设置flex布局，标题在左，按钮在右，使用虎鲸笔记原生样式变量
     titleContainer.style.cssText = `
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 10px;
-      padding: 8px;
+      margin-bottom: var(--orca-spacing-md);
+      padding: var(--orca-spacing-sm);
+      border-bottom: var(--orca-border-separator);
     `
     
     // 创建标题
@@ -1929,15 +1715,22 @@ const typeConfigs = [
     title.textContent = '日期过滤'
     this.applyStyles(title, 'page-display-date-filter-title')
     
+    // 设置标题样式，使用虎鲸笔记原生样式变量
+    title.style.cssText = `
+      font-size: var(--orca-fontsize-md);
+      font-weight: var(--orca-fontweight-lg);
+      color: var(--orca-color-text-1);
+    `
+    
     // 创建标题右侧的按钮
     const titleButtons = document.createElement('div')
     titleButtons.className = 'page-display-date-filter-title-buttons'
     this.applyStyles(titleButtons, 'page-display-date-filter-title-buttons')
     
-    // 设置按钮水平排列
+    // 设置按钮水平排列，使用虎鲸笔记原生样式变量
     titleButtons.style.cssText = `
       display: flex;
-      gap: 4px;
+      gap: var(--orca-spacing-xs);
       align-items: center;
     `
     
@@ -1945,24 +1738,28 @@ const typeConfigs = [
     clearBtn.textContent = '清除'
     clearBtn.className = 'page-display-date-filter-clear-btn'
     
-    // 设置按钮样式
+    // 设置按钮样式，使用虎鲸笔记原生样式变量
     clearBtn.style.cssText = `
-      padding: 3px 6px;
-      font-size: 11px;
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 3px;
+      padding: var(--orca-spacing-xs) var(--orca-spacing-sm);
+      font-size: var(--orca-fontsize-2xs);
+      font-weight: var(--orca-fontweight-md);
+      background: var(--orca-color-bg-2);
+      color: var(--orca-color-text-1);
+      border: var(--orca-border-general);
+      border-radius: var(--orca-radius-sm);
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
+      font-family: var(--orca-fontfamily-ui);
     `
     
-    // 添加悬浮效果
+    // 添加悬浮效果，使用虎鲸笔记原生颜色变量
     clearBtn.addEventListener('mouseenter', () => {
-      clearBtn.style.background = 'rgba(255, 255, 255, 0.2)'
+      clearBtn.style.background = 'var(--orca-color-bg-3)'
+      clearBtn.style.borderColor = 'var(--orca-color-primary-3)'
     })
     clearBtn.addEventListener('mouseleave', () => {
-      clearBtn.style.background = 'rgba(255, 255, 255, 0.1)'
+      clearBtn.style.background = 'var(--orca-color-bg-2)'
+      clearBtn.style.borderColor = 'var(--orca-color-border)'
     })
     clearBtn.addEventListener('click', () => {
       // 清除所有日期过滤设置
@@ -1979,23 +1776,27 @@ const typeConfigs = [
     confirmBtn.textContent = '确认'
     confirmBtn.className = 'page-display-date-filter-confirm-btn'
     
-    // 设置确认按钮样式（绿色主题）
+    // 设置确认按钮样式，使用虎鲸笔记原生样式变量
     confirmBtn.style.cssText = `
-      padding: 3px 6px;
-      font-size: 11px;
-      background: rgba(34, 197, 94, 0.2);
-      color: white;
-      border: 1px solid rgba(34, 197, 94, 0.4);
-      border-radius: 3px;
+      padding: var(--orca-spacing-xs) var(--orca-spacing-sm);
+      font-size: var(--orca-fontsize-2xs);
+      font-weight: var(--orca-fontweight-md);
+      background: var(--orca-color-success-5);
+      color: var(--orca-color-white);
+      border: 1px solid var(--orca-color-success-5);
+      border-radius: var(--orca-radius-sm);
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     confirmBtn.addEventListener('mouseenter', () => {
-      confirmBtn.style.background = 'rgba(34, 197, 94, 0.3)'
+      confirmBtn.style.background = 'var(--orca-color-success-6)'
+      confirmBtn.style.borderColor = 'var(--orca-color-success-6)'
     })
     confirmBtn.addEventListener('mouseleave', () => {
-      confirmBtn.style.background = 'rgba(34, 197, 94, 0.2)'
+      confirmBtn.style.background = 'var(--orca-color-success-5)'
+      confirmBtn.style.borderColor = 'var(--orca-color-success-5)'
     })
     confirmBtn.addEventListener('click', () => {
       // 应用日期过滤设置
@@ -2007,23 +1808,27 @@ const typeConfigs = [
     cancelBtn.textContent = '取消'
     cancelBtn.className = 'page-display-date-filter-cancel-btn'
     
-    // 设置取消按钮样式（红色主题）
+    // 设置取消按钮样式，使用虎鲸笔记原生样式变量
     cancelBtn.style.cssText = `
-      padding: 3px 6px;
-      font-size: 11px;
-      background: rgba(239, 68, 68, 0.2);
-      color: white;
-      border: 1px solid rgba(239, 68, 68, 0.4);
-      border-radius: 3px;
+      padding: var(--orca-spacing-xs) var(--orca-spacing-sm);
+      font-size: var(--orca-fontsize-2xs);
+      font-weight: var(--orca-fontweight-md);
+      background: var(--orca-color-dangerous-5);
+      color: var(--orca-color-white);
+      border: 1px solid var(--orca-color-dangerous-5);
+      border-radius: var(--orca-radius-sm);
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     cancelBtn.addEventListener('mouseenter', () => {
-      cancelBtn.style.background = 'rgba(239, 68, 68, 0.3)'
+      cancelBtn.style.background = 'var(--orca-color-dangerous-6)'
+      cancelBtn.style.borderColor = 'var(--orca-color-dangerous-6)'
     })
     cancelBtn.addEventListener('mouseleave', () => {
-      cancelBtn.style.background = 'rgba(239, 68, 68, 0.2)'
+      cancelBtn.style.background = 'var(--orca-color-dangerous-5)'
+      cancelBtn.style.borderColor = 'var(--orca-color-dangerous-5)'
     })
     cancelBtn.addEventListener('click', () => {
       // 隐藏面板
@@ -2041,13 +1846,13 @@ const typeConfigs = [
     const optionsContainer = document.createElement('div')
     optionsContainer.className = 'page-display-date-filter-options'
     
-    // 设置样式
+    // 设置样式，使用虎鲸笔记原生样式变量
     optionsContainer.style.cssText = `
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      margin-top: 10px;
-      padding: 8px;
+      gap: var(--orca-spacing-md);
+      margin-top: var(--orca-spacing-md);
+      padding: var(--orca-spacing-sm);
     `
     
     // 启用日期过滤复选框
@@ -2055,10 +1860,11 @@ const typeConfigs = [
     enableContainer.style.cssText = `
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px;
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 4px;
+      gap: var(--orca-spacing-sm);
+      padding: var(--orca-spacing-sm);
+      background: var(--orca-color-bg-2);
+      border-radius: var(--orca-radius-sm);
+      border: var(--orca-border-general);
     `
     
     const enableCheckbox = document.createElement('input')
@@ -2075,9 +1881,11 @@ const typeConfigs = [
     enableLabel.textContent = '启用日期过滤'
     enableLabel.style.cssText = `
       cursor: pointer;
-      font-size: 12px;
-      color: white;
+      font-size: var(--orca-fontsize-sm);
+      font-weight: var(--orca-fontweight-md);
+      color: var(--orca-color-text-1);
       user-select: none;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     enableContainer.appendChild(enableCheckbox)
@@ -2088,31 +1896,36 @@ const typeConfigs = [
     dateFieldContainer.style.cssText = `
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px;
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 4px;
+      gap: var(--orca-spacing-sm);
+      padding: var(--orca-spacing-sm);
+      background: var(--orca-color-bg-2);
+      border-radius: var(--orca-radius-sm);
+      border: var(--orca-border-general);
     `
     
     const dateFieldLabel = document.createElement('label')
     dateFieldLabel.textContent = '按日期字段:'
     dateFieldLabel.style.cssText = `
-      font-size: 12px;
-      color: white;
+      font-size: var(--orca-fontsize-sm);
+      font-weight: var(--orca-fontweight-md);
+      color: var(--orca-color-text-1);
       user-select: none;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     const dateFieldSelect = document.createElement('select')
     dateFieldSelect.id = 'date-filter-field'
     dateFieldSelect.value = this.dateFilterConfig.dateField
     dateFieldSelect.style.cssText = `
-      padding: 4px 8px;
-      font-size: 12px;
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 3px;
+      padding: var(--orca-spacing-xs) var(--orca-spacing-sm);
+      font-size: var(--orca-fontsize-sm);
+      font-weight: var(--orca-fontweight-md);
+      background: var(--orca-color-bg-1);
+      color: var(--orca-color-text-1);
+      border: var(--orca-border-general);
+      border-radius: var(--orca-radius-sm);
       cursor: pointer;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     const createdOption = document.createElement('option')
@@ -2129,36 +1942,41 @@ const typeConfigs = [
     dateFieldContainer.appendChild(dateFieldLabel)
     dateFieldContainer.appendChild(dateFieldSelect)
     
-    // 相对日期选择
+    // 相对日期选择，使用虎鲸笔记原生样式变量
     const relativeDateContainer = document.createElement('div')
     relativeDateContainer.style.cssText = `
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px;
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 4px;
+      gap: var(--orca-spacing-sm);
+      padding: var(--orca-spacing-sm);
+      background: var(--orca-color-bg-2);
+      border-radius: var(--orca-radius-sm);
+      border: var(--orca-border-general);
     `
     
     const relativeDateLabel = document.createElement('label')
     relativeDateLabel.textContent = '相对日期:'
     relativeDateLabel.style.cssText = `
-      font-size: 12px;
-      color: white;
+      font-size: var(--orca-fontsize-sm);
+      font-weight: var(--orca-fontweight-md);
+      color: var(--orca-color-text-1);
       user-select: none;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     const relativeDateSelect = document.createElement('select')
     relativeDateSelect.id = 'date-filter-relative'
     relativeDateSelect.value = this.dateFilterConfig.relativeDate || ''
     relativeDateSelect.style.cssText = `
-      padding: 4px 8px;
-      font-size: 12px;
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 3px;
+      padding: var(--orca-spacing-xs) var(--orca-spacing-sm);
+      font-size: var(--orca-fontsize-sm);
+      font-weight: var(--orca-fontweight-md);
+      background: var(--orca-color-bg-1);
+      color: var(--orca-color-text-1);
+      border: var(--orca-border-general);
+      border-radius: var(--orca-radius-sm);
       cursor: pointer;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     const relativeOptions = [
@@ -2181,29 +1999,32 @@ const typeConfigs = [
     relativeDateContainer.appendChild(relativeDateLabel)
     relativeDateContainer.appendChild(relativeDateSelect)
     
-    // 绝对日期选择
+    // 绝对日期选择，使用虎鲸笔记原生样式变量
     const absoluteDateContainer = document.createElement('div')
     absoluteDateContainer.style.cssText = `
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      padding: 8px;
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 4px;
+      gap: var(--orca-spacing-sm);
+      padding: var(--orca-spacing-sm);
+      background: var(--orca-color-bg-2);
+      border-radius: var(--orca-radius-sm);
+      border: var(--orca-border-general);
     `
     
     const absoluteDateLabel = document.createElement('div')
     absoluteDateLabel.textContent = '绝对日期范围:'
     absoluteDateLabel.style.cssText = `
-      font-size: 12px;
-      color: white;
+      font-size: var(--orca-fontsize-sm);
+      font-weight: var(--orca-fontweight-md);
+      color: var(--orca-color-text-1);
       user-select: none;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     const dateRangeContainer = document.createElement('div')
     dateRangeContainer.style.cssText = `
       display: flex;
-      gap: 8px;
+      gap: var(--orca-spacing-sm);
       align-items: center;
     `
     
@@ -2212,13 +2033,15 @@ const typeConfigs = [
     startDateInput.id = 'date-filter-start'
     startDateInput.value = this.dateFilterConfig.startDate ? this.dateFilterConfig.startDate.toISOString().split('T')[0] : ''
     startDateInput.style.cssText = `
-      padding: 4px 8px;
-      font-size: 12px;
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 3px;
+      padding: var(--orca-spacing-xs) var(--orca-spacing-sm);
+      font-size: var(--orca-fontsize-sm);
+      font-weight: var(--orca-fontweight-md);
+      background: var(--orca-color-bg-1);
+      color: var(--orca-color-text-1);
+      border: var(--orca-border-general);
+      border-radius: var(--orca-radius-sm);
       cursor: pointer;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     const endDateInput = document.createElement('input')
@@ -2226,29 +2049,35 @@ const typeConfigs = [
     endDateInput.id = 'date-filter-end'
     endDateInput.value = this.dateFilterConfig.endDate ? this.dateFilterConfig.endDate.toISOString().split('T')[0] : ''
     endDateInput.style.cssText = `
-      padding: 4px 8px;
-      font-size: 12px;
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 3px;
+      padding: var(--orca-spacing-xs) var(--orca-spacing-sm);
+      font-size: var(--orca-fontsize-sm);
+      font-weight: var(--orca-fontweight-md);
+      background: var(--orca-color-bg-1);
+      color: var(--orca-color-text-1);
+      border: var(--orca-border-general);
+      border-radius: var(--orca-radius-sm);
       cursor: pointer;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     const startLabel = document.createElement('label')
     startLabel.textContent = '开始:'
     startLabel.style.cssText = `
-      font-size: 11px;
-      color: white;
+      font-size: var(--orca-fontsize-xs);
+      font-weight: var(--orca-fontweight-md);
+      color: var(--orca-color-text-1);
       user-select: none;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     const endLabel = document.createElement('label')
     endLabel.textContent = '结束:'
     endLabel.style.cssText = `
-      font-size: 11px;
-      color: white;
+      font-size: var(--orca-fontsize-xs);
+      font-weight: var(--orca-fontweight-md);
+      color: var(--orca-color-text-1);
       user-select: none;
+      font-family: var(--orca-fontfamily-ui);
     `
     
     dateRangeContainer.appendChild(startLabel)
@@ -2319,7 +2148,6 @@ const typeConfigs = [
         this.showIcons = parsedSettings.showIcons ?? true
         this.multiLine = parsedSettings.multiLine ?? false
         this.multiColumn = parsedSettings.multiColumn ?? false
-        this.queryListHidden = parsedSettings.queryListHidden ?? false
         this.backrefAliasQueryEnabled = parsedSettings.backrefAliasQueryEnabled ?? true
         this.journalPageSupport = parsedSettings.journalPageSupport ?? true
         this.defaultCollapsed = parsedSettings.defaultCollapsed ?? true
@@ -2370,7 +2198,6 @@ const typeConfigs = [
         multiLine: this.multiLine,
         multiColumn: this.multiColumn,
         displayMode: this.displayMode,
-        queryListHidden: this.queryListHidden,
         backrefAliasQueryEnabled: this.backrefAliasQueryEnabled,
         journalPageSupport: this.journalPageSupport,
         defaultCollapsed: this.defaultCollapsed,
@@ -2931,8 +2758,6 @@ const typeConfigs = [
       this.observer = null
     }
     
-    // 断开查询列表观察器
-    this.stopQueryListObserver()
     
     // 清理防抖定时器
     if (this.updateTimeout) {
@@ -5944,8 +5769,6 @@ const typeConfigs = [
       this.createDisplay(uniqueItems, groupedItems, tagBlockIds, inlineRefIds, containedInBlockIds)
       this.retryCount = 0 // 重置重试计数
       
-      // 更新查询列表按钮状态
-      this.updateQueryListButton()
     } catch (error) {
       this.logError("PageDisplay: Failed to create display:", error)
       this.handleDisplayError(error)
@@ -5965,8 +5788,6 @@ const typeConfigs = [
       this.createDisplayForPanel(uniqueItems, groupedItems, tagBlockIds, inlineRefIds, containedInBlockIds, panelId)
       this.retryCount = 0 // 重置重试计数
       
-      // 更新当前面板的查询列表按钮状态
-      this.updateQueryListButton()
     } catch (error) {
       this.logError("PageDisplay: Failed to create current panel display:", error)
       this.handleDisplayError(error)
@@ -6158,171 +5979,11 @@ const typeConfigs = [
   }
 
 
-  // 创建查询列表控制按钮
-  private createQueryListToggleButton() {
-    const panelId = this.getCurrentPanelId()
-    
-    // 移除现有按钮
-    const existingButton = this.queryListToggleButtons.get(panelId)
-    if (existingButton) {
-      existingButton.remove()
-    }
 
-    const button = document.createElement('div')
-    button.className = 'page-display-query-list-toggle'
-    const icon = document.createElement('i')
-    icon.className = 'ti ti-eye'
-    icon.style.cssText = `
-      font-size: 14px;
-      color: var(--orca-color-text-1);
-      transition: color 0.3s ease;
-    `
-    button.appendChild(icon)
-    button.setAttribute('data-hidden', 'false')
-    button.title = '隐藏底部查询别名块'
-    
-    // 使用StyleManager应用统一样式
-    this.styleManager.applyStyles(button, 'page-display-query-list-toggle')
-    
-    // 添加点击事件
-    button.addEventListener('click', () => {
-      this.toggleQueryListVisibility()
-    })
-    
-    // 添加到 page-display-left-content 后面
-    const leftContent = document.querySelector('.page-display-left-content')
-    if (leftContent && leftContent.parentNode) {
-      leftContent.parentNode.insertBefore(button, leftContent.nextSibling)
-    } else {
-      // 如果找不到 leftContent，添加到 body
-      document.body.appendChild(button)
-    }
-    
-    // 存储按钮引用
-    this.queryListToggleButtons.set(panelId, button)
-  }
 
-  // 更新查询列表按钮状态
-  private updateQueryListButton() {
-    const panelId = this.getCurrentPanelId()
-    const button = this.queryListToggleButtons.get(panelId)
-    if (!button) return
-    
-    // 更新按钮状态指示
-    const hasQueryList = this.hasQueryList()
-    if (hasQueryList) {
-      button.title = '隐藏底部查询别名块'
-      // 自动应用隐藏逻辑
-      this.applyQueryListHideLogic()
-    } else {
-      button.title = '当前页面无查询列表'
-    }
-  }
 
-  // 应用查询列表隐藏逻辑
-  private applyQueryListHideLogic() {
-    // 使用更高效的查询方式，直接查找目标元素
-    const targetSelector = '.orca-block.orca-container.orca-block-postfix.orca-query-list-block-block'
-    const targetBlocks = document.querySelectorAll(targetSelector)
-    
-    // 批量处理，使用CSS类控制显示/隐藏
-    targetBlocks.forEach((targetBlock) => {
-      // 找到包含该目标块的查询列表块
-      const queryBlock = targetBlock.closest('.orca-query-list-block')
-      if (queryBlock) {
-        if (this.queryListHidden) {
-          // 添加隐藏类
-          queryBlock.classList.add('page-display-query-list-hidden')
-        } else {
-          // 移除隐藏类
-          queryBlock.classList.remove('page-display-query-list-hidden')
-        }
-      }
-    })
-    
-    // 启动或停止MutationObserver
-    if (this.queryListHidden) {
-      this.startQueryListObserver()
-    } else {
-      this.stopQueryListObserver()
-    }
-    
-    // 更新按钮状态
-    const panelId = this.getCurrentPanelId()
-    const button = this.queryListToggleButtons.get(panelId)
-    if (button) {
-      button.setAttribute('data-hidden', this.queryListHidden.toString())
-      
-      // 更新图标颜色
-      const icon = button.querySelector('i')
-      if (icon) {
-        if (this.queryListHidden) {
-          icon.style.color = 'var(--orca-color-dangerous-5)'
-        } else {
-          icon.style.color = 'var(--orca-color-text-1)'
-        }
-      }
-    }
-  }
-
-  // 启动查询列表观察器
-  private startQueryListObserver() {
-    if (this.mutationObserver) {
-      return // 已经启动
-    }
-    
-    this.mutationObserver = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'childList') {
-          // 检查新添加的节点
-          mutation.addedNodes.forEach((node) => {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              const element = node as Element
-              // 检查是否是查询列表相关的元素
-              if (element.classList.contains('orca-query-list-block') || 
-                  element.querySelector('.orca-query-list-block')) {
-                // 延迟应用隐藏类，确保DOM完全渲染
-                setTimeout(() => {
-                  this.applyHiddenClassToNewElements()
-                }, 100)
-              }
-            }
-          })
-        }
-      })
-    })
-    
-    // 开始观察整个文档的变化
-    this.mutationObserver.observe(document.body, {
-      childList: true,
-      subtree: true
-    })
-  }
   
-  // 停止查询列表观察器
-  private stopQueryListObserver() {
-    if (this.mutationObserver) {
-      this.mutationObserver.disconnect()
-      this.mutationObserver = null
-    }
-  }
   
-  // 对新出现的元素应用隐藏类
-  private applyHiddenClassToNewElements() {
-    if (!this.queryListHidden) {
-      return
-    }
-    
-    const targetSelector = '.orca-block.orca-container.orca-block-postfix.orca-query-list-block-block'
-    const targetBlocks = document.querySelectorAll(targetSelector)
-    
-    targetBlocks.forEach((targetBlock) => {
-      const queryBlock = targetBlock.closest('.orca-query-list-block')
-      if (queryBlock && !queryBlock.classList.contains('page-display-query-list-hidden')) {
-        queryBlock.classList.add('page-display-query-list-hidden')
-      }
-    })
-  }
 
   /**
    * 创建显示元素
@@ -6962,6 +6623,12 @@ const typeConfigs = [
     
     // 渲染项目列表（支持懒加载）
     const renderItems = (list: HTMLElement, items: PageDisplayItem[], searchInput: HTMLInputElement, tagBlockIds: DbId[], inlineRefIds: DbId[], containedInBlockIds: DbId[]) => {
+      // 创建层级信息显示元素
+      const hierarchyInfo = this.createHierarchyInfoElement(items)
+      if (hierarchyInfo) {
+        list.appendChild(hierarchyInfo)
+      }
+      
       items.forEach(item => {
         const itemElement = document.createElement('li')
         itemElement.className = `page-display-item${this.multiLine ? ' multi-line' : ' single-line'} ${item.itemType}`
@@ -7476,9 +7143,6 @@ const typeConfigs = [
     // 恢复面板状态
     this.restorePanelState(targetPanelId, container)
     
-    // 创建查询列表控制按钮
-    this.createQueryListToggleButton()
-    this.updateQueryListButton()
   }
 
   /**
@@ -7556,33 +7220,6 @@ const typeConfigs = [
     return isInDOM && hasParent
   }
 
-  // 检查是否存在查询列表
-  private hasQueryList(): boolean {
-    const queryList = document.querySelector('.orca-query-list')
-    if (!queryList) {
-      return false
-    }
-    
-    const queryListBlock = queryList.querySelector('.orca-block.orca-container.orca-block-postfix.orca-query-list-block-block')
-    const hasBlock = queryListBlock !== null
-    return hasBlock
-  }
-
-  // 切换查询列表显示状态
-  private toggleQueryListVisibility() {
-    // 切换持久化状态
-    this.queryListHidden = !this.queryListHidden
-    
-    // 应用新的状态
-    this.applyQueryListHideLogic()
-    
-    // 保存设置
-    this.saveSettings()
-    
-    // 显示通知
-    const status = this.queryListHidden ? "隐藏" : "显示"
-    orca.notify("info", `底部查询别名块已${status}`)
-  }
 
   // 查找目标元素 - 支持多种查找策略，优先查找当前活跃面板
   /**
@@ -7720,12 +7357,6 @@ const typeConfigs = [
         this.containers.delete(panelId)
       }
       
-      // 移除指定面板的查询列表按钮
-      const button = this.queryListToggleButtons.get(panelId)
-      if (button && button.parentNode) {
-        button.parentNode.removeChild(button)
-        this.queryListToggleButtons.delete(panelId)
-      }
     } else {
       // 移除所有面板的显示
       this.log("PageDisplay: Removing all displays")
@@ -7736,13 +7367,6 @@ const typeConfigs = [
       }
       this.containers.clear()
       
-      // 移除所有查询列表按钮
-      for (const [id, button] of this.queryListToggleButtons.entries()) {
-        if (button.parentNode) {
-          button.parentNode.removeChild(button)
-        }
-      }
-      this.queryListToggleButtons.clear()
     }
   }
 
@@ -7867,6 +7491,215 @@ const typeConfigs = [
     })
 
     this.log('DOM观察器已启动')
+  }
+
+  /**
+   * 创建层级信息显示元素
+   * @param items 页面显示项目列表
+   * @returns 层级信息元素或null
+   */
+  private createHierarchyInfoElement(items: PageDisplayItem[]): HTMLElement | null {
+    if (!items || items.length === 0) {
+      return null
+    }
+
+    // 计算层级统计信息
+    const hierarchyStats = this.calculateHierarchyStats(items)
+    
+    // 如果没有层级信息，不显示
+    if (hierarchyStats.totalLevels <= 1) {
+      return null
+    }
+
+    // 创建层级信息容器
+    const hierarchyInfo = document.createElement('div')
+    hierarchyInfo.className = 'page-display-hierarchy-info'
+    this.applyStyles(hierarchyInfo, 'page-display-hierarchy-info')
+
+    // 创建图标
+    const icon = document.createElement('span')
+    icon.className = 'page-display-hierarchy-icon ti ti-hierarchy-2'
+    this.applyStyles(icon, 'page-display-hierarchy-icon')
+
+    // 创建文本内容
+    const text = document.createElement('span')
+    text.className = 'page-display-hierarchy-text'
+    this.applyStyles(text, 'page-display-hierarchy-text')
+    text.textContent = `层级结构: ${hierarchyStats.totalLevels} 层, 共 ${hierarchyStats.totalItems} 个项目`
+
+    // 创建层级数量标签
+    const levelBadge = document.createElement('span')
+    levelBadge.className = 'page-display-hierarchy-level'
+    this.applyStyles(levelBadge, 'page-display-hierarchy-level')
+    levelBadge.textContent = hierarchyStats.totalLevels.toString()
+
+    // 组装元素
+    hierarchyInfo.appendChild(icon)
+    hierarchyInfo.appendChild(text)
+    hierarchyInfo.appendChild(levelBadge)
+
+    // 添加点击事件，显示详细层级信息
+    hierarchyInfo.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      this.showHierarchyDetails(hierarchyStats)
+    })
+
+    // 添加悬停效果
+    hierarchyInfo.addEventListener('mouseenter', () => {
+      hierarchyInfo.style.cursor = 'pointer'
+    })
+
+    return hierarchyInfo
+  }
+
+  /**
+   * 计算层级统计信息
+   * @param items 页面显示项目列表
+   * @returns 层级统计信息
+   */
+  private calculateHierarchyStats(items: PageDisplayItem[]): {
+    totalLevels: number
+    totalItems: number
+    levelDistribution: Record<number, number>
+    maxLevel: number
+  } {
+    const levelDistribution: Record<number, number> = {}
+    let maxLevel = 0
+    let totalLevels = 0
+
+    items.forEach(item => {
+      // 从childBlocksInfo中获取层级信息
+      if (item.childBlocksInfo && item.childBlocksInfo.length > 0) {
+        item.childBlocksInfo.forEach(child => {
+          const level = child.level || 0
+          levelDistribution[level] = (levelDistribution[level] || 0) + 1
+          maxLevel = Math.max(maxLevel, level)
+        })
+      }
+    })
+
+    // 计算总层数（从0开始，所以+1）
+    totalLevels = maxLevel + 1
+
+    return {
+      totalLevels,
+      totalItems: items.length,
+      levelDistribution,
+      maxLevel
+    }
+  }
+
+  /**
+   * 显示详细层级信息
+   * @param stats 层级统计信息
+   */
+  private showHierarchyDetails(stats: {
+    totalLevels: number
+    totalItems: number
+    levelDistribution: Record<number, number>
+    maxLevel: number
+  }): void {
+    // 创建详细信息弹窗
+    const details = document.createElement('div')
+    details.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: var(--orca-color-bg-1);
+      border: var(--orca-border-general);
+      border-radius: var(--orca-radius-lg);
+      box-shadow: var(--orca-shadow-popup);
+      padding: var(--orca-spacing-lg);
+      z-index: var(--orca-zindex-modal);
+      max-width: 400px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: var(--orca-fontfamily-ui);
+    `
+
+    // 创建标题
+    const title = document.createElement('div')
+    title.textContent = '层级结构详情'
+    title.style.cssText = `
+      font-size: var(--orca-fontsize-md);
+      font-weight: var(--orca-fontweight-lg);
+      color: var(--orca-color-text-1);
+      margin-bottom: var(--orca-spacing-md);
+      border-bottom: var(--orca-border-general);
+      padding-bottom: var(--orca-spacing-sm);
+    `
+
+    // 创建层级分布信息
+    const levelInfo = document.createElement('div')
+    levelInfo.innerHTML = `
+      <div style="margin-bottom: var(--orca-spacing-sm);">
+        <strong>总层数:</strong> ${stats.totalLevels}
+      </div>
+      <div style="margin-bottom: var(--orca-spacing-sm);">
+        <strong>总项目:</strong> ${stats.totalItems}
+      </div>
+      <div style="margin-bottom: var(--orca-spacing-sm);">
+        <strong>层级分布:</strong>
+      </div>
+    `
+
+    // 添加每层的详细信息
+    for (let level = 0; level <= stats.maxLevel; level++) {
+      const count = stats.levelDistribution[level] || 0
+      const levelDiv = document.createElement('div')
+      levelDiv.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        padding: var(--orca-spacing-xs) var(--orca-spacing-sm);
+        background: var(--orca-color-bg-2);
+        border-radius: var(--orca-radius-sm);
+        margin-bottom: var(--orca-spacing-xs);
+        font-size: var(--orca-fontsize-sm);
+      `
+      levelDiv.innerHTML = `
+        <span>第 ${level} 层</span>
+        <span style="color: var(--orca-color-primary-3); font-weight: var(--orca-fontweight-lg);">${count} 项</span>
+      `
+      levelInfo.appendChild(levelDiv)
+    }
+
+    // 创建关闭按钮
+    const closeButton = document.createElement('button')
+    closeButton.textContent = '关闭'
+    closeButton.style.cssText = `
+      width: 100%;
+      padding: var(--orca-spacing-sm);
+      margin-top: var(--orca-spacing-md);
+      background: var(--orca-color-primary-3);
+      color: var(--orca-color-primary-5);
+      border: none;
+      border-radius: var(--orca-radius-sm);
+      cursor: pointer;
+      font-family: var(--orca-fontfamily-ui);
+      font-size: var(--orca-fontsize-sm);
+      font-weight: var(--orca-fontweight-md);
+    `
+
+    closeButton.addEventListener('click', () => {
+      document.body.removeChild(details)
+    })
+
+    // 组装弹窗
+    details.appendChild(title)
+    details.appendChild(levelInfo)
+    details.appendChild(closeButton)
+
+    // 添加到页面
+    document.body.appendChild(details)
+
+    // 点击背景关闭
+    details.addEventListener('click', (e) => {
+      if (e.target === details) {
+        document.body.removeChild(details)
+      }
+    })
   }
 }
 

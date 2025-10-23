@@ -29,58 +29,358 @@
 /* 功能按钮基础样式 */
 .page-display-search-icon,
 .page-display-filter-icon,
+.page-display-date-filter-icon,
 .page-display-icons-toggle-icon,
 .page-display-multiline-toggle-icon,
 .page-display-multicolumn-toggle-icon {
     width: 24px;
     height: 24px;
     background: var(--orca-color-bg-1);
-    border: 1px solid var(--orca-color-border-1);
-    border-radius: 4px;
+    border: var(--orca-border-general);
+    border-radius: var(--orca-radius-sm);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    margin-left: 4px;
+    margin-left: var(--orca-spacing-xs);
     flex-shrink: 0;
-    font-size: 12px;
+    font-size: var(--orca-fontsize-2xs);
     color: var(--orca-color-text-2);
     transition: all 0.15s ease;
     user-select: none;
+    font-family: var(--orca-fontfamily-ui);
+    box-shadow: var(--orca-shadow-segmented);
 }
 
 /* 功能按钮悬浮效果 */
 .page-display-search-icon:hover,
 .page-display-filter-icon:hover,
+.page-display-date-filter-icon:hover,
 .page-display-icons-toggle-icon:hover,
 .page-display-multiline-toggle-icon:hover,
-.page-display-multicolumn-toggle-icon:hover {
+.page-display-multicolumn-toggle-icon:hover,
+.page-display-query-list-toggle:hover {
     background: var(--orca-color-bg-2);
     color: var(--orca-color-text-1);
+    border-color: var(--orca-color-primary-3);
+    box-shadow: var(--orca-shadow-md);
+    transform: translateY(-1px);
 }
 
-/* 查询列表切换按钮样式 */
-.page-display-query-list-toggle {
-    width: 24px;
-    height: 24px;
-    background: var(--orca-color-bg-1);
-    border: 1px solid var(--orca-color-border-1);
-    border-radius: 4px;
+
+/* 主容器样式 */
+.page-display-container {
+    border: none;
+    background: transparent;
+    box-shadow: none !important;
+    font-family: var(--orca-fontfamily-ui);
+    color: var(--orca-color-text-1);
+    margin: var(--orca-spacing-md);
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+/* 标题容器样式 */
+.page-display-title-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: var(--orca-height-segmented);
+}
+
+/* 左侧内容容器 */
+.page-display-left-content {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+}
+
+/* 箭头样式 */
+.page-display-arrow {
+    margin-right: 6px;
+    font-size: 10px;
+    color: var(--orca-color-text-2);
+    transition: transform 0.2s ease;
+    transform: rotate(0deg);
+    width: 12px;
+    height: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+/* 标题样式 */
+.page-display-title {
+    font-size: var(--orca-fontsize-md);
+    font-weight: var(--orca-fontweight-lg);
+    color: var(--orca-color-text-1);
+    display: flex;
+    align-items: center;
+    gap: var(--orca-spacing-sm);
     cursor: pointer;
-    margin-left: 4px;
-    opacity: 0;
-    transition: all 0.15s ease;
-    flex-shrink: 0;
-    font-size: 12px;
-    color: var(--orca-color-text-2);
     user-select: none;
 }
 
-.page-display-query-list-toggle:hover {
-    opacity: 1;
-    background: var(--orca-color-bg-2);
+/* 计数样式 */
+.page-display-count {
+    margin-left: 8px;
+    font-size: var(--orca-fontsize-2xs);
+    color: var(--orca-color-text-2);
+    font-weight: var(--orca-fontweight-md);
+}
+
+/* 搜索容器样式 */
+.page-display-search-container {
+    margin-bottom: var(--orca-spacing-md);
+    display: none;
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: opacity 0.2s ease, max-height 0.2s ease;
+}
+
+/* 搜索框样式 */
+.page-display-search-input {
+    width: 100%;
+    padding: var(--orca-spacing-sm);
+    font-size: var(--orca-fontsize-sm);
+    font-family: var(--orca-fontfamily-ui);
+    background: var(--orca-color-bg-1);
     color: var(--orca-color-text-1);
+    border: var(--orca-border-general);
+    border-radius: var(--orca-radius-sm);
+    transition: all 0.2s ease;
+    outline: none;
+    margin-top: 4px;
+}
+
+.page-display-search-input:focus {
+    border-color: var(--orca-color-primary-3);
+}
+
+.page-display-search-input::placeholder {
+    color: var(--orca-color-placeholder);
+}
+
+/* 列表样式 */
+.page-display-list {
+    list-style: none;
+    margin: 0;
+    padding: var(--orca-spacing-sm);
+    max-height: 400px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--orca-color-win-scrollbar) transparent;
+}
+
+.page-display-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.page-display-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.page-display-list::-webkit-scrollbar-thumb {
+    background: var(--orca-color-win-scrollbar);
+    border-radius: var(--orca-radius-sm);
+}
+
+.page-display-list::-webkit-scrollbar-thumb:hover {
+    background: var(--orca-color-gray-5);
+}
+
+/* 列表项样式 */
+.page-display-item {
+    display: flex;
+    align-items: center;
+    padding: 2px;
+    margin-bottom: 3px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: var(--orca-fontsize-sm);
+    color: var(--orca-color-text-1);
+    user-select: none;
+    border-radius: 8px;
+}
+
+.page-display-item:hover {
+    background: var(--orca-color-bg-2);
+}
+
+.page-display-item:active {
+    transform: translateY(0);
+}
+
+/* 列表项图标样式 */
+.page-display-item-icon {
+    margin-right: var(--orca-spacing-sm);
+    font-size: var(--orca-fontsize-sm);
+    color: var(--orca-color-text-2);
+    flex-shrink: 0;
+}
+
+/* 列表项文本样式 */
+.page-display-item-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 多行模式样式 */
+.page-display-item.multi-line .page-display-item-text {
+    white-space: normal;
+    line-height: var(--orca-lineheight-md);
+}
+
+/* 多列模式样式 */
+.page-display-list.multi-column {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: var(--orca-spacing-sm);
+}
+
+/* 过滤面板样式 */
+.page-display-type-filter-panel,
+.page-display-date-filter-panel {
+    background: var(--orca-color-bg-1);
+    border: var(--orca-border-general);
+    border-radius: var(--orca-radius-lg);
+    box-shadow: var(--orca-shadow-popup);
+    padding: var(--orca-spacing-lg);
+    margin: var(--orca-spacing-sm);
+    font-family: var(--orca-fontfamily-ui);
+    color: var(--orca-color-text-1);
+    z-index: var(--orca-zindex-modal);
+}
+
+/* 过滤选项样式 */
+.page-display-type-filter-option {
+    display: flex;
+    align-items: center;
+    padding: var(--orca-spacing-sm);
+    margin-bottom: var(--orca-spacing-xs);
+    background: var(--orca-color-bg-2);
+    border: var(--orca-border-general);
+    border-radius: var(--orca-radius-sm);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.page-display-type-filter-option:hover {
+    background: var(--orca-color-bg-3);
+    border-color: var(--orca-color-primary-3);
+}
+
+/* 复选框样式 */
+.page-display-type-filter-checkbox {
+    margin: 0;
+    margin-right: var(--orca-spacing-sm);
+    cursor: pointer;
+    accent-color: var(--orca-color-primary-5);
+}
+
+/* 过滤标签样式 */
+.page-display-type-filter-label {
+    display: flex;
+    align-items: center;
+    gap: var(--orca-spacing-sm);
+    cursor: pointer;
+    font-size: var(--orca-fontsize-sm);
+    color: var(--orca-color-text-1);
+    user-select: none;
+    font-family: var(--orca-fontfamily-ui);
+}
+
+/* 子内容样式 */
+.page-display-child-content {
+    margin-top: var(--orca-spacing-xs);
+    padding-left: var(--orca-spacing-md);
+    font-size: var(--orca-fontsize-2xs);
+    color: var(--orca-color-text-2);
+    border-left: 2px solid var(--orca-color-border);
+    margin-left: var(--orca-spacing-sm);
+}
+
+/* 高亮搜索词样式 */
+.page-display-highlight {
+    background: var(--orca-color-result-highlight);
+    color: var(--orca-color-text-1);
+    padding: 1px 2px;
+    border-radius: 2px;
+    font-weight: var(--orca-fontweight-lg);
+}
+
+/* 层级信息显示样式 */
+.page-display-hierarchy-info {
+    display: flex;
+    align-items: center;
+    padding: var(--orca-spacing-xs) var(--orca-spacing-sm);
+    margin-bottom: var(--orca-spacing-xs);
+    background: var(--orca-color-bg-1);
+    border-radius: var(--orca-radius-sm);
+    font-size: var(--orca-fontsize-2xs);
+    color: var(--orca-color-text-2);
+    font-family: var(--orca-fontfamily-ui);
+    border-left: 3px solid var(--orca-color-primary-3);
+    transition: all 0.2s ease;
+}
+
+.page-display-hierarchy-info:hover {
+    background: var(--orca-color-bg-3);
+    border-color: var(--orca-color-primary-4);
+}
+
+.page-display-hierarchy-icon {
+    margin-right: var(--orca-spacing-xs);
+    font-size: var(--orca-fontsize-xs);
+    color: var(--orca-color-primary-3);
+    flex-shrink: 0;
+}
+
+.page-display-hierarchy-text {
+    flex: 1;
+    font-weight: var(--orca-fontweight-md);
+}
+
+.page-display-hierarchy-level {
+    margin-left: var(--orca-spacing-xs);
+    padding: 2px 6px;
+    background-color: var(--orca-color-bg-2);
+    color: var(--orca-color-primary-5);
+    border-radius: var(--orca-radius-xs);
+    font-size: var(--orca-fontsize-3xs);
+    font-weight: var(--orca-fontweight-lg);
+    min-width: 16px;
+    text-align: center;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .page-display-container {
+        margin: var(--orca-spacing-sm);
+    }
+    
+    .page-display-title-container {
+        padding: var(--orca-spacing-sm);
+        flex-direction: column;
+        gap: var(--orca-spacing-sm);
+    }
+    
+    .page-display-list.multi-column {
+        grid-template-columns: 1fr;
+    }
+    
+    .page-display-function-buttons-container {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .page-display-hierarchy-info {
+        padding: var(--orca-spacing-2xs) var(--orca-spacing-xs);
+        font-size: var(--orca-fontsize-3xs);
+    }
 }
