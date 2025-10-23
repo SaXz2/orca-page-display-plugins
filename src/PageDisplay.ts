@@ -2,6 +2,15 @@ import type { Block, DbId, BlockRef } from "./orca.d.ts"
 import pinyinMatch from 'pinyin-match'
 
 /**
+ * 标签信息接口
+ */
+interface TagInfo {
+  name: string
+  icon?: string
+  _icon?: string
+}
+
+/**
  * 子块信息接口
  */
 interface ChildBlockInfo {
@@ -214,6 +223,56 @@ class ApiService {
     }
   }
 
+  /**
+   * 从块中提取标签信息
+   * @param block 块对象
+   * @returns 标签数组
+   */
+  private extractTagsFromBlock(block: Block): string[] {
+    const tags: string[] = []
+    
+    // 从properties中提取标签
+    if (block.properties && block.properties.length > 0) {
+      for (const prop of block.properties) {
+        // 检查是否为标签属性
+        if (prop.name === 'tag' || prop.name === 'tags') {
+          if (prop.value) {
+            if (Array.isArray(prop.value)) {
+              tags.push(...prop.value)
+            } else if (typeof prop.value === 'string') {
+              // 如果是字符串，按逗号分割
+              const tagList = prop.value.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+              tags.push(...tagList)
+            }
+          }
+        }
+      }
+    }
+    
+    // 从aliases中提取可能的标签（以#开头的别名）
+    if (block.aliases && block.aliases.length > 0) {
+      for (const alias of block.aliases) {
+        if (alias.startsWith('#')) {
+          tags.push(alias.substring(1)) // 去掉#符号
+        }
+      }
+    }
+    
+    // 从文本内容中提取标签（#标签格式）
+    if (block.text) {
+      const tagMatches = block.text.match(/#[\w\u4e00-\u9fa5]+/g)
+      if (tagMatches) {
+        for (const tagMatch of tagMatches) {
+          const tag = tagMatch.substring(1) // 去掉#符号
+          if (!tags.includes(tag)) {
+            tags.push(tag)
+          }
+        }
+      }
+    }
+    
+    return [...new Set(tags)] // 去重
+  }
 
   /**
    * 通过别名获取块ID
@@ -1096,6 +1155,210 @@ export class PageDisplay {
   
   private logWarn(...args: any[]) {
     this.logger.warn(...args)
+  }
+
+
+  /**
+   * 从块中提取标签信息（包含颜色和图标）
+   * @param block 块对象
+   * @returns 标签信息数组
+   */
+  private extractTagsFromBlock(block: Block): TagInfo[] {
+    const tags: TagInfo[] = []
+    
+    // 从properties中提取标签
+    if (block.properties && block.properties.length > 0) {
+      for (const prop of block.properties) {
+        // 检查是否为标签属性
+        if (prop.name === 'tag' || prop.name === 'tags') {
+          if (prop.value) {
+            if (Array.isArray(prop.value)) {
+              // 处理数组形式的标签
+              for (const tagValue of prop.value) {
+                if (typeof tagValue === 'string') {
+                  tags.push({ name: tagValue })
+                } else if (typeof tagValue === 'object' && tagValue !== null) {
+                  // 处理对象形式的标签，可能包含颜色和图标
+                  const tagObj = tagValue as any
+                  tags.push({
+                    name: tagObj.name || tagObj.text || String(tagValue),
+                    icon: tagObj.icon || tagObj._icon
+                  })
+                }
+              }
+            } else if (typeof prop.value === 'string') {
+              // 如果是字符串，按逗号分割
+              const tagList = prop.value.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+              for (const tagName of tagList) {
+                tags.push({ name: tagName })
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // 从aliases中提取可能的标签（以#开头的别名）
+    if (block.aliases && block.aliases.length > 0) {
+      for (const alias of block.aliases) {
+        if (alias.startsWith('#')) {
+          tags.push({ name: alias.substring(1) }) // 去掉#符号
+        }
+      }
+    }
+    
+    // 从文本内容中提取标签（#标签格式）
+    if (block.text) {
+      const tagMatches = block.text.match(/#[\w\u4e00-\u9fa5]+/g)
+      if (tagMatches) {
+        for (const tagMatch of tagMatches) {
+          const tag = tagMatch.substring(1) // 去掉#符号
+          if (!tags.some(t => t.name === tag)) {
+            tags.push({ name: tag })
+          }
+        }
+      }
+    }
+    
+    // 去重
+    const uniqueTags: TagInfo[] = []
+    const seenNames = new Set<string>()
+    for (const tag of tags) {
+      if (!seenNames.has(tag.name)) {
+        seenNames.add(tag.name)
+        uniqueTags.push(tag)
+      }
+    }
+    
+    return uniqueTags
+  }
+
+  /**
+   * 创建标签元素
+   * @param tags 标签信息数组
+   * @returns 标签容器元素
+   */
+  private createTagElements(tags: TagInfo[]): HTMLElement | null {
+    if (!tags || tags.length === 0) {
+      return null
+    }
+
+    const tagContainer = document.createElement('div')
+    tagContainer.className = 'page-display-tags-container'
+    tagContainer.style.cssText = `
+      display: flex;
+      flex-direction: row-reverse;
+      gap: 4px;
+      margin-top: 4px;
+      align-items: flex-start;
+    `
+
+    for (const tag of tags) {
+      const tagElement = document.createElement('div')
+      tagElement.className = 'page-display-tag'
+      tagElement.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        background: var(--orca-color-bg-2);
+        color: var(--orca-color-text-2);
+        border: 1px solid var(--orca-color-border-2);
+        border-radius: var(--orca-radius-xs);
+        font-size: var(--orca-fontsize-2xs);
+        font-weight: var(--orca-fontweight-md);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        user-select: none;
+        font-family: var(--orca-fontfamily-ui);
+        width: fit-content;
+        min-width: 0;
+      `
+
+      // 移除颜色逻辑，使用默认样式
+
+      // 创建标签内容
+      const tagContent = document.createElement('span')
+      tagContent.textContent = `#${tag.name}`
+      tagContent.style.cssText = `
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      `
+
+      // 添加图标
+      if (tag.icon) {
+        const iconElement = document.createElement('span')
+        iconElement.className = `ti ${tag.icon}`
+        iconElement.style.cssText = `
+          font-size: 12px;
+          flex-shrink: 0;
+          margin-right: 2px;
+        `
+        tagElement.appendChild(iconElement)
+      }
+
+      tagElement.appendChild(tagContent)
+
+      // 添加点击事件
+      tagElement.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        // 可以在这里添加标签点击的处理逻辑，比如搜索或过滤
+        console.log(`Tag clicked: ${tag.name}`)
+      })
+
+      tagContainer.appendChild(tagElement)
+    }
+
+    return tagContainer
+  }
+
+
+  /**
+   * 为列表项包装器添加标签显示（在面包屑下方）
+   * @param itemWrapper 列表项包装器元素
+   * @param blockId 块ID
+   */
+  private async addTagsToItemWrapper(itemWrapper: HTMLElement, blockId: DbId): Promise<void> {
+    try {
+      const block = await this.apiService.getBlock(blockId)
+      if (block) {
+        const tags = this.extractTagsFromBlock(block)
+        if (tags.length > 0) {
+          const tagContainer = this.createTagElements(tags)
+          if (tagContainer) {
+            itemWrapper.appendChild(tagContainer)
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error("Failed to get block for tags:", error)
+    }
+  }
+
+  /**
+   * 为列表项添加标签显示
+   * @param itemElement 列表项元素
+   * @param blockId 块ID
+   */
+  private async addTagsToItem(itemElement: HTMLElement, blockId: DbId): Promise<void> {
+    try {
+      const block = await this.apiService.getBlock(blockId)
+      if (block) {
+        const tags = this.extractTagsFromBlock(block)
+        if (tags.length > 0) {
+          const tagContainer = this.createTagElements(tags)
+          if (tagContainer) {
+            itemElement.appendChild(tagContainer)
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error("Failed to get block for tags:", error)
+    }
   }
   
   /**
@@ -6830,6 +7093,9 @@ const typeConfigs = [
           itemWrapper.appendChild(breadcrumbContainer)
         }
         
+        // 添加标签显示到面包屑下方
+        this.addTagsToItemWrapper(itemWrapper, item.id)
+        
         const itemElement = document.createElement('li')
         itemElement.className = `page-display-item${this.multiLine ? ' multi-line' : ' single-line'} ${item.itemType}`
         this.applyStyles(itemElement, 'page-display-item')
@@ -6945,6 +7211,8 @@ const typeConfigs = [
         
         this.applyStyles(text, 'page-display-item-text')
         itemElement.appendChild(text)
+        
+        // 标签已经添加到itemWrapper中，不需要在这里添加
         
         // 如果有搜索词且项目有子块信息，显示匹配的子块内容
         if (searchTerm && item.childBlocksInfo && item.childBlocksInfo.length > 0) {
@@ -8197,4 +8465,5 @@ const typeConfigs = [
     })
   }
 }
+
 

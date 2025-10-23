@@ -452,6 +452,43 @@
     text-align: center;
 }
 
+/* 标签容器样式 - 反向排列 */
+.page-display-tags-container {
+    display: flex;
+    flex-direction: row-reverse;
+    gap: 4px;
+    margin-top: 4px;
+    align-items: flex-start;
+}
+
+/* 标签元素样式 - 支持颜色和图标 */
+.page-display-tag {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--orca-color-bg-2);
+    color: var(--orca-color-text-2);
+    border: 1px solid var(--orca-color-border-2);
+    border-radius: var(--orca-radius-xs);
+    font-size: var(--orca-fontsize-2xs);
+    font-weight: var(--orca-fontweight-md);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+    font-family: var(--orca-fontfamily-ui);
+    width: fit-content;
+    min-width: 0;
+}
+
+/* 标签悬停效果 - 移除高亮，保持原始样式 */
+
+/* 标签激活效果 */
+.page-display-tag:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
     .page-display-container {
@@ -476,5 +513,10 @@
     .page-display-hierarchy-info {
         padding: var(--orca-spacing-2xs) var(--orca-spacing-xs);
         font-size: var(--orca-fontsize-3xs);
+    }
+    
+    .page-display-tag {
+        font-size: var(--orca-fontsize-3xs);
+        padding: 1px 4px;
     }
 }
