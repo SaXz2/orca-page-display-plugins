@@ -873,6 +873,14 @@ export class PageDisplay {
   private displayMode: DisplayMode = 'flat'
   /** 可用显示模式列表 */
   private readonly DISPLAY_MODES: DisplayMode[] = ['flat', 'grouped']
+  /** 控制是否支持Journal页面，默认启用 */
+  private journalPageSupport: boolean = true
+  /** Journal页面块ID缓存，key为日期字符串，value为块ID */
+  private journalBlockCache: Map<string, DbId> = new Map()
+  /** Journal页面块ID缓存时间戳 */
+  private journalBlockCacheTimestamps: Map<string, number> = new Map()
+  /** Journal页面缓存有效期（10分钟） */
+  private readonly JOURNAL_CACHE_DURATION = 10 * 60 * 1000
   
   // === 状态管理属性 ===
   /** 缓存上次的根块ID，用于避免重复更新 */
@@ -1007,6 +1015,68 @@ export class PageDisplay {
    */
   public getIconsEnabled(): boolean {
     return this.showIcons
+  }
+
+  /**
+   * 设置Journal页面支持状态
+   * @param enabled 是否启用Journal页面支持
+   */
+  public setJournalPageSupport(enabled: boolean): void {
+    this.journalPageSupport = enabled
+    this.saveSettings()
+    
+    // 如果禁用Journal页面支持，强制更新显示
+    if (!enabled) {
+      this.forceUpdate()
+    }
+  }
+
+  /**
+   * 获取Journal页面支持状态
+   * @returns 是否启用Journal页面支持
+   */
+  public getJournalPageSupport(): boolean {
+    return this.journalPageSupport
+  }
+
+  /**
+   * 设置图标显示状态
+   * @param enabled 是否显示图标
+   */
+  public setIconsEnabled(enabled: boolean): void {
+    this.showIcons = enabled
+    this.saveSettings()
+    this.forceUpdate()
+  }
+
+  /**
+   * 设置多行显示状态
+   * @param enabled 是否多行显示
+   */
+  public setMultiLine(enabled: boolean): void {
+    this.multiLine = enabled
+    this.saveSettings()
+    this.forceUpdate()
+  }
+
+  /**
+   * 设置多列显示状态
+   * @param enabled 是否多列显示
+   */
+  public setMultiColumn(enabled: boolean): void {
+    this.multiColumn = enabled
+    this.saveSettings()
+    this.forceUpdate()
+  }
+
+  /**
+   * 设置显示模式
+   * @param mode 显示模式
+   */
+  public setDisplayMode(mode: 'flat' | 'grouped'): void {
+    this.displayMode = mode
+    this.saveSettings()
+    this.forceUpdate()
   }
 
   /**
@@ -1558,6 +1628,7 @@ const typeConfigs = [
         this.multiColumn = parsedSettings.multiColumn ?? false
         this.queryListHidden = parsedSettings.queryListHidden ?? false
         this.backrefAliasQueryEnabled = parsedSettings.backrefAliasQueryEnabled ?? true
+        this.journalPageSupport = parsedSettings.journalPageSupport ?? true
         const savedMode = parsedSettings.displayMode
         if (savedMode === 'flat' || savedMode === 'grouped') {
           this.displayMode = savedMode
@@ -1593,6 +1664,7 @@ const typeConfigs = [
         displayMode: this.displayMode,
         queryListHidden: this.queryListHidden,
         backrefAliasQueryEnabled: this.backrefAliasQueryEnabled,
+        journalPageSupport: this.journalPageSupport,
         // 保存类型过滤设置
         typeFilters: Object.fromEntries(this.typeFilters),
         showTypeFilters: this.showTypeFilters,
@@ -2014,14 +2086,124 @@ const typeConfigs = [
       
       const currentPanel = findPanel(panels)
       
-      if (currentPanel && currentPanel.viewArgs && currentPanel.viewArgs.blockId) {
-        const blockId = currentPanel.viewArgs.blockId
-        return blockId
+      if (currentPanel && currentPanel.viewArgs) {
+        // 检查是否为Journal页面
+        if (currentPanel.view === "journal" && currentPanel.viewArgs.date) {
+          // 对于Journal页面，先尝试从缓存获取，如果没有缓存则返回特殊标识
+          if (this.journalPageSupport) {
+            const journalBlockId = this.getJournalBlockIdSync(currentPanel.viewArgs.date)
+            if (journalBlockId) {
+              return journalBlockId
+            } else {
+              // 没有缓存，返回特殊标识，后续异步获取
+              return -1 as DbId
+            }
+          } else {
+            return null
+          }
+        }
+        
+        // 普通块页面
+        if (currentPanel.viewArgs.blockId) {
+          const blockId = currentPanel.viewArgs.blockId
+          return blockId
+        }
       }
       
       return null
     } catch (error) {
       console.error("Failed to get current root block ID:", error)
+      return null
+    }
+  }
+
+  /**
+   * 同步获取Journal页面的块ID（带缓存）
+   * @param date 日期信息
+   * @returns Journal页面的块ID，如果获取失败则返回null
+   */
+  private getJournalBlockIdSync(date: any): DbId | null {
+    try {
+      const dateKey = typeof date === 'string' ? date : JSON.stringify(date)
+      
+      // 检查缓存
+      const now = Date.now()
+      if (this.journalBlockCache.has(dateKey)) {
+        const cacheTimestamp = this.journalBlockCacheTimestamps.get(dateKey)
+        if (cacheTimestamp && now - cacheTimestamp < this.JOURNAL_CACHE_DURATION) {
+          const cachedBlockId = this.journalBlockCache.get(dateKey)
+          this.log("PageDisplay: Using cached journal block ID:", cachedBlockId)
+          return cachedBlockId || null
+        } else {
+          // 缓存过期，清理
+          this.journalBlockCache.delete(dateKey)
+          this.journalBlockCacheTimestamps.delete(dateKey)
+        }
+      }
+      
+      // 如果没有缓存，返回null，让异步方法处理
+      return null
+    } catch (error) {
+      this.logError("Failed to get cached journal block ID:", error)
+      return null
+    }
+  }
+
+  /**
+   * 异步获取Journal页面的块ID（带缓存）
+   * 通过日期信息调用get-journal-block API获取对应的块ID
+   * @returns Journal页面的块ID，如果获取失败则返回null
+   */
+  private async getJournalBlockId(): Promise<DbId | null> {
+    try {
+      const { activePanel, panels } = orca.state
+      
+      // 查找当前激活的面板
+      const findPanel = (panel: any): any => {
+        if (panel.id === activePanel) {
+          return panel
+        }
+        if (panel.children) {
+          for (const child of panel.children) {
+            const found = findPanel(child)
+            if (found) return found
+          }
+        }
+        return null
+      }
+      
+      const currentPanel = findPanel(panels)
+      
+      if (currentPanel && currentPanel.view === "journal" && currentPanel.viewArgs && currentPanel.viewArgs.date) {
+        const date = currentPanel.viewArgs.date
+        const dateKey = typeof date === 'string' ? date : JSON.stringify(date)
+        
+        // 调用get-journal-block API获取Journal块ID
+        const journalBlock = await this.safeApiCall(
+          async () => {
+            return await orca.invokeBackend("get-journal-block", date)
+          },
+          "Failed to get journal block:",
+          null
+        )
+        
+        if (journalBlock && journalBlock.id) {
+          // 缓存结果
+          const now = Date.now()
+          this.journalBlockCache.set(dateKey, journalBlock.id)
+          this.journalBlockCacheTimestamps.set(dateKey, now)
+          
+          this.log("PageDisplay: Journal block ID obtained and cached:", journalBlock.id)
+          return journalBlock.id
+        } else {
+          this.log("PageDisplay: No journal block found for date:", date)
+          return null
+        }
+      }
+      
+      return null
+    } catch (error) {
+      this.logError("Failed to get journal block ID:", error)
       return null
     }
   }
@@ -3944,12 +4126,32 @@ const typeConfigs = [
 
     await this.settingsReady.catch(() => undefined)
 
-    const rootBlockId = this.getCurrentRootBlockId()
+    let rootBlockId = this.getCurrentRootBlockId()
     this.log("rootBlockId =", rootBlockId)
     
     // 检查是否需要跳过更新（除非强制更新）
     if (!force && this.shouldSkipUpdate(rootBlockId)) {
       return
+    }
+    
+    // 处理Journal页面的特殊情况（当没有缓存时）
+    if (rootBlockId === -1) {
+      if (!this.journalPageSupport) {
+        this.log("PageDisplay: Journal page support is disabled, removing display")
+        this.removeDisplay()
+        return
+      }
+      
+      this.log("PageDisplay: Journal page cache miss, getting journal block ID")
+      const journalBlockId = await this.getJournalBlockId()
+      if (journalBlockId) {
+        rootBlockId = journalBlockId
+        this.log("PageDisplay: Journal block ID obtained:", rootBlockId)
+      } else {
+        this.log("PageDisplay: No journal block found, removing display")
+        this.removeDisplay()
+        return
+      }
     }
     
     this.lastRootBlockId = rootBlockId
@@ -3979,13 +4181,33 @@ const typeConfigs = [
 
     await this.settingsReady.catch(() => undefined)
 
-    const rootBlockId = this.getCurrentRootBlockId()
+    let rootBlockId = this.getCurrentRootBlockId()
     const currentPanelId = this.getCurrentPanelId()
     this.log("rootBlockId =", rootBlockId, "currentPanelId =", currentPanelId)
     
     // 检查当前面板是否需要跳过更新
     if (this.shouldSkipCurrentPanelUpdate(rootBlockId, currentPanelId)) {
       return
+    }
+    
+    // 处理Journal页面的特殊情况（当没有缓存时）
+    if (rootBlockId === -1) {
+      if (!this.journalPageSupport) {
+        this.log("PageDisplay: Journal page support is disabled, removing current panel display")
+        this.removeDisplay(currentPanelId)
+        return
+      }
+      
+      this.log("PageDisplay: Journal page cache miss in current panel, getting journal block ID")
+      const journalBlockId = await this.getJournalBlockId()
+      if (journalBlockId) {
+        rootBlockId = journalBlockId
+        this.log("PageDisplay: Journal block ID obtained:", rootBlockId)
+      } else {
+        this.log("PageDisplay: No journal block found, removing current panel display")
+        this.removeDisplay(currentPanelId)
+        return
+      }
     }
     
     this.lastRootBlockId = rootBlockId
@@ -4111,6 +4333,8 @@ const typeConfigs = [
   private clearCache(): void {
     this.dataCache.clear()
     this.cacheTimestamps.clear()
+    this.journalBlockCache.clear()
+    this.journalBlockCacheTimestamps.clear()
   }
 
   /**
@@ -4118,10 +4342,20 @@ const typeConfigs = [
    */
   private clearExpiredCache(): void {
     const now = Date.now()
+    
+    // 清理普通缓存
     for (const [blockId, timestamp] of this.cacheTimestamps.entries()) {
       if (now - timestamp > this.CACHE_DURATION) {
         this.dataCache.delete(blockId)
         this.cacheTimestamps.delete(blockId)
+      }
+    }
+    
+    // 清理Journal页面缓存
+    for (const [dateKey, timestamp] of this.journalBlockCacheTimestamps.entries()) {
+      if (now - timestamp > this.JOURNAL_CACHE_DURATION) {
+        this.journalBlockCache.delete(dateKey)
+        this.journalBlockCacheTimestamps.delete(dateKey)
       }
     }
   }

@@ -97,6 +97,72 @@ export async function load(_name: string) {
     }
   }, "取消选择所有类型");
 
+  // 设置插件设置模式
+  await orca.plugins.setSettingsSchema(pluginName, {
+    showIcons: {
+      label: "显示图标",
+      description: "在页面空间显示项目中显示图标",
+      type: "boolean",
+      defaultValue: true
+    },
+    multiLine: {
+      label: "多行显示",
+      description: "项目文本以多行形式显示",
+      type: "boolean",
+      defaultValue: false
+    },
+    multiColumn: {
+      label: "多列显示",
+      description: "项目以多列形式显示",
+      type: "boolean",
+      defaultValue: false
+    },
+    displayMode: {
+      label: "显示模式",
+      description: "选择显示模式：平铺或分组",
+      type: "singleChoice",
+      defaultValue: "flat",
+      choices: [
+        { label: "平铺模式", value: "flat" },
+        { label: "分组模式", value: "grouped" }
+      ]
+    },
+    journalPageSupport: {
+      label: "Journal页面支持",
+      description: "启用Journal页面的块ID识别和显示功能",
+      type: "boolean",
+      defaultValue: true
+    }
+  });
+
+  // 监听设置变化
+  const settingsUnsubscribe = subscribe(orca.state, () => {
+    if (pageDisplay && orca.state.settingsOpened) {
+      // 当设置面板打开时，同步设置到PageDisplay实例
+      const settings = (orca.state.settings as any)[pluginName];
+      if (settings) {
+        if (typeof settings.showIcons === 'boolean') {
+          pageDisplay.setIconsEnabled(settings.showIcons);
+        }
+        if (typeof settings.multiLine === 'boolean') {
+          pageDisplay.setMultiLine(settings.multiLine);
+        }
+        if (typeof settings.multiColumn === 'boolean') {
+          pageDisplay.setMultiColumn(settings.multiColumn);
+        }
+        if (typeof settings.displayMode === 'string') {
+          pageDisplay.setDisplayMode(settings.displayMode as 'flat' | 'grouped');
+        }
+        if (typeof settings.journalPageSupport === 'boolean') {
+          pageDisplay.setJournalPageSupport(settings.journalPageSupport);
+        }
+      }
+    }
+  });
+
+  // 存储设置监听器以便清理
+  (window as any).__orcaPageDisplaySettingsUnsubscribe = settingsUnsubscribe;
+
 }
 
 export async function unload() {
@@ -110,5 +176,11 @@ export async function unload() {
   if ((window as any).__orcaPageDisplayUnsubscribe) {
     (window as any).__orcaPageDisplayUnsubscribe();
     delete (window as any).__orcaPageDisplayUnsubscribe;
+  }
+
+  // 取消设置监听器
+  if ((window as any).__orcaPageDisplaySettingsUnsubscribe) {
+    (window as any).__orcaPageDisplaySettingsUnsubscribe();
+    delete (window as any).__orcaPageDisplaySettingsUnsubscribe;
   }
 }
