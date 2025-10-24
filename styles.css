@@ -1,21 +1,31 @@
-/* Page Display Plugin Styles */
+/* ============================================
+   Page Display Plugin - 页面显示插件样式
+   ============================================ */
 
-/* 查询列表隐藏样式 - 用于隐藏底部查询别名块 */
+/* ============================================
+   1. 查询列表隐藏样式
+   ============================================ */
+
+/* 查询列表隐藏 - 用于隐藏底部查询别名块 */
 .page-display-query-list-hidden {
     display: none !important;
 }
 
-/* 查询列表块隐藏样式 - 更具体的选择器 */
+/* 查询列表块隐藏 - 更具体的选择器 */
 .orca-query-list-block.page-display-query-list-hidden {
     display: none !important;
 }
 
-/* 查询列表块内容隐藏样式 */
+/* 查询列表块内容隐藏 */
 .orca-query-list-block.page-display-query-list-hidden .orca-block.orca-container.orca-block-postfix.orca-query-list-block-block {
     display: none !important;
 }
 
-/* 功能按钮容器样式 */
+/* ============================================
+   2. 功能按钮样式
+   ============================================ */
+
+/* 功能按钮容器 */
 .page-display-function-buttons-container {
     display: flex;
     align-items: center;
@@ -69,8 +79,11 @@
     transform: translateY(-1px);
 }
 
+/* ============================================
+   3. 主容器和标题样式
+   ============================================ */
 
-/* 主容器样式 */
+/* 主容器 */
 .page-display-container {
     border: none;
     background: transparent;
@@ -82,7 +95,7 @@
     transition: all 0.3s ease;
 }
 
-/* 标题容器样式 */
+/* 标题容器 */
 .page-display-title-container {
     display: flex;
     justify-content: space-between;
@@ -98,7 +111,7 @@
     min-width: 0;
 }
 
-/* 箭头样式 */
+/* 箭头图标 */
 .page-display-arrow {
     margin-right: 6px;
     font-size: 10px;
@@ -112,7 +125,7 @@
     justify-content: center;
 }
 
-/* 标题样式 */
+/* 标题文本 */
 .page-display-title {
     font-size: var(--orca-fontsize-md);
     font-weight: var(--orca-fontweight-lg);
@@ -124,7 +137,7 @@
     user-select: none;
 }
 
-/* 计数样式 */
+/* 计数显示 */
 .page-display-count {
     margin-left: 8px;
     font-size: var(--orca-fontsize-2xs);
@@ -132,7 +145,11 @@
     font-weight: var(--orca-fontweight-md);
 }
 
-/* 搜索容器样式 */
+/* ============================================
+   4. 搜索功能样式
+   ============================================ */
+
+/* 搜索容器 */
 .page-display-search-container {
     margin-bottom: var(--orca-spacing-md);
     display: none;
@@ -142,7 +159,7 @@
     transition: opacity 0.2s ease, max-height 0.2s ease;
 }
 
-/* 搜索框样式 */
+/* 搜索输入框 */
 .page-display-search-input {
     width: 100%;
     padding: var(--orca-spacing-sm);
@@ -165,7 +182,20 @@
     color: var(--orca-color-placeholder);
 }
 
-/* 列表样式 */
+/* 搜索词高亮 */
+.page-display-highlight {
+    background: var(--orca-color-result-highlight);
+    color: var(--orca-color-text-1);
+    padding: 1px 2px;
+    border-radius: 2px;
+    font-weight: var(--orca-fontweight-lg);
+}
+
+/* ============================================
+   5. 列表显示样式
+   ============================================ */
+
+/* 列表容器 */
 .page-display-list {
     list-style: none;
     margin: 0;
@@ -176,6 +206,7 @@
     scrollbar-color: var(--orca-color-win-scrollbar) transparent;
 }
 
+/* 滚动条样式 - Webkit */
 .page-display-list::-webkit-scrollbar {
     width: 8px;
 }
@@ -193,7 +224,7 @@
     background: var(--orca-color-gray-5);
 }
 
-/* 列表项样式 */
+/* 列表项 */
 .page-display-item {
     display: flex;
     align-items: center;
@@ -207,9 +238,7 @@
     border-radius: 8px;
 }
 
-
-
-/* 列表项图标样式 */
+/* 列表项图标 */
 .page-display-item-icon {
     margin-right: var(--orca-spacing-sm);
     font-size: var(--orca-fontsize-sm);
@@ -217,7 +246,7 @@
     flex-shrink: 0;
 }
 
-/* 列表项文本样式 */
+/* 列表项文本 */
 .page-display-item-text {
     flex: 1;
     overflow: hidden;
@@ -225,20 +254,52 @@
     white-space: nowrap;
 }
 
-/* 多行模式样式 */
+/* 列表项包装容器 */
+.page-display-item-wrapper {
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--orca-radius-sm);
+    background: transparent;
+    transition: all 0.2s ease;
+    position: relative;
+    padding: 4px;
+    margin-top: 8px;
+    border: 1px solid #7d7d7d40;
+}
+
+/* 多行模式 */
 .page-display-item.multi-line .page-display-item-text {
     white-space: normal;
     line-height: var(--orca-lineheight-md);
 }
 
-/* 多列模式样式 */
+/* 多列模式 */
 .page-display-list.multi-column {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: var(--orca-spacing-sm);
 }
 
-/* 过滤面板样式 */
+/* 子内容显示 */
+.page-display-child-content {
+    margin-top: 4px;
+    padding-left: 0px;
+    font-size: 16px;
+    color: var(--orca-color-text-2);
+    border-left: 2px solid var(--orca-color-border-2);
+    margin-left: 8px;
+    width: calc(100% - 8px);
+    max-width: calc(100% - 8px);
+    display: block;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* ============================================
+   6. 过滤面板样式
+   ============================================ */
+
+/* 过滤面板容器 */
 .page-display-type-filter-panel,
 .page-display-date-filter-panel {
     background: var(--orca-color-bg-1);
@@ -252,7 +313,7 @@
     z-index: var(--orca-zindex-modal);
 }
 
-/* 过滤选项样式 */
+/* 过滤选项 */
 .page-display-type-filter-option {
     display: flex;
     align-items: center;
@@ -270,7 +331,7 @@
     border-color: var(--orca-color-primary-3);
 }
 
-/* 复选框样式 */
+/* 过滤复选框 */
 .page-display-type-filter-checkbox {
     margin: 0;
     margin-right: var(--orca-spacing-sm);
@@ -278,7 +339,7 @@
     accent-color: var(--orca-color-primary-5);
 }
 
-/* 过滤标签样式 */
+/* 过滤标签 */
 .page-display-type-filter-label {
     display: flex;
     align-items: center;
@@ -290,46 +351,11 @@
     font-family: var(--orca-fontfamily-ui);
 }
 
-/* 子内容样式 */
-.page-display-child-content {
-    margin-top: 4px;
-    padding-left: 0px;
-    font-size: 16px;
-    color: var(--orca-color-text-2);
-    border-left: 2px solid var(--orca-color-border-2);
-    margin-left: 8px;
-    width: calc(100% - 8px);
-    max-width: calc(100% - 8px);
-    display: block;
-    box-sizing: border-box;
-    overflow: hidden;
-}
+/* ============================================
+   7. 面包屑导航样式
+   ============================================ */
 
-/* 高亮搜索词样式 */
-.page-display-highlight {
-    background: var(--orca-color-result-highlight);
-    color: var(--orca-color-text-1);
-    padding: 1px 2px;
-    border-radius: 2px;
-    font-weight: var(--orca-fontweight-lg);
-}
-
-/* 条目包装容器样式 */
-.page-display-item-wrapper {
-    display: flex;
-    flex-direction: column;
-    border-radius: var(--orca-radius-sm);
-    background: transparent;
-    transition: all 0.2s ease;
-    position: relative;
-    padding: 4px;
-    margin-top: 8px;
-    border: 1px solid #7d7d7d40;
-}
-
-
-
-/* 面包屑容器样式 */
+/* 面包屑容器 */
 .page-display-breadcrumb-container {
     display: flex;
     align-items: center;
@@ -344,8 +370,7 @@
     position: relative;
 }
 
-
-/* 面包屑层级样式 */
+/* 面包屑层级 - 合并重复定义 */
 .page-display-breadcrumb-level {
     display: flex;
     align-items: center;
@@ -355,9 +380,18 @@
     flex: 1;
     font-size: var(--orca-fontsize-2xs);
     line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-height: 20px;
+    transition: all 0.2s ease;
 }
 
-/* 面包屑层级项样式 */
+.page-display-breadcrumb-level:hover {
+    border-radius: var(--orca-radius-xs);
+}
+
+/* 面包屑层级项 */
 .page-display-breadcrumb-level-item {
     display: inline-block;
     padding: 2px 6px;
@@ -381,7 +415,7 @@
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-/* 面包屑分隔符样式 */
+/* 面包屑分隔符 */
 .page-display-breadcrumb-separator {
     color: var(--orca-color-text-3);
     margin: 0 4px;
@@ -389,28 +423,11 @@
     pointer-events: none;
 }
 
+/* ============================================
+   8. 层级信息样式
+   ============================================ */
 
-
-/* 面包屑路径中的箭头样式 */
-.page-display-breadcrumb-level {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    /* 确保有足够的空间，避免悬停时的布局变化 */
-    min-height: 20px;
-    /* 添加平滑过渡 */
-    transition: all 0.2s ease;
-}
-
-/* 当面包屑路径过长时的处理 */
-.page-display-breadcrumb-level:hover {
-    /* 使用transform而不是改变布局属性来避免抖动 */
-    border-radius: var(--orca-radius-xs);
-    /* 保持原有的文本处理，但使用更平滑的过渡 */
-    transition: all 0.2s ease;
-}
-
-/* 层级信息显示样式 */
+/* 层级信息容器 */
 .page-display-hierarchy-info {
     display: flex;
     align-items: center;
@@ -430,6 +447,7 @@
     border-color: var(--orca-color-primary-4);
 }
 
+/* 层级信息图标 */
 .page-display-hierarchy-icon {
     margin-right: var(--orca-spacing-xs);
     font-size: var(--orca-fontsize-xs);
@@ -437,11 +455,13 @@
     flex-shrink: 0;
 }
 
+/* 层级信息文本 */
 .page-display-hierarchy-text {
     flex: 1;
     font-weight: var(--orca-fontweight-md);
 }
 
+/* 层级信息级别 */
 .page-display-hierarchy-level {
     margin-left: var(--orca-spacing-xs);
     padding: 2px 6px;
@@ -454,25 +474,29 @@
     text-align: center;
 }
 
-/* 标签容器样式 - 反向排列 */
+/* ============================================
+   9. 标签显示样式
+   ============================================ */
+
+/* 标签容器 - 反向排列 */
 .page-display-tags-container {
     display: flex;
     flex-direction: row-reverse;
-    gap: 4px;
-    margin-top: 4px;
+    gap: 2px;
+    margin-top: 2px;
     align-items: flex-start;
 }
 
-/* 标签元素样式 - 支持颜色和图标 */
+/* 标签元素 */
 .page-display-tag {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
+    gap: 2px;
+    padding: 2px 4px;
     background: var(--orca-color-bg-2);
     color: var(--orca-color-text-2);
     border: 1px solid var(--orca-color-border-2);
-    border-radius: var(--orca-radius-xs);
+    border-radius: 3px;
     font-size: var(--orca-fontsize-2xs);
     font-weight: var(--orca-fontweight-md);
     cursor: pointer;
@@ -483,42 +507,64 @@
     min-width: 0;
 }
 
-/* 标签悬停效果 - 移除高亮，保持原始样式 */
-
-/* 标签激活效果 */
 .page-display-tag:active {
     transform: translateY(0);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-/* 响应式设计 */
+/* 标签内容 */
+.page-display-tag-content {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 标签图标 */
+.page-display-tag-icon {
+    font-size: 12px;
+    flex-shrink: 0;
+    margin-right: 2px;
+}
+
+/* ============================================
+   10. 响应式设计
+   ============================================ */
+
 @media (max-width: 768px) {
+    /* 主容器 */
     .page-display-container {
         margin: var(--orca-spacing-sm);
     }
     
+    /* 标题容器 */
     .page-display-title-container {
         padding: var(--orca-spacing-sm);
         flex-direction: column;
         gap: var(--orca-spacing-sm);
     }
     
+    /* 多列布局 */
     .page-display-list.multi-column {
         grid-template-columns: 1fr;
     }
     
+    /* 功能按钮容器 */
     .page-display-function-buttons-container {
         flex-wrap: wrap;
         justify-content: center;
     }
     
+    /* 层级信息 */
     .page-display-hierarchy-info {
         padding: var(--orca-spacing-2xs) var(--orca-spacing-xs);
         font-size: var(--orca-fontsize-3xs);
     }
     
+    /* 标签样式 */
     .page-display-tag {
         font-size: var(--orca-fontsize-3xs);
-        padding: 1px 4px;
+        padding: 1px 3px;
     }
 }

@@ -1272,58 +1272,22 @@ export class PageDisplay {
 
     const tagContainer = document.createElement('div')
     tagContainer.className = 'page-display-tags-container'
-    tagContainer.style.cssText = `
-      display: flex;
-      flex-direction: row-reverse;
-      gap: 4px;
-      margin-top: 4px;
-      align-items: flex-start;
-    `
 
     for (const tag of tags) {
       const tagElement = document.createElement('div')
       tagElement.className = 'page-display-tag'
-      tagElement.style.cssText = `
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 8px;
-        background: var(--orca-color-bg-2);
-        color: var(--orca-color-text-2);
-        border: 1px solid var(--orca-color-border-2);
-        border-radius: var(--orca-radius-xs);
-        font-size: var(--orca-fontsize-2xs);
-        font-weight: var(--orca-fontweight-md);
-        cursor: pointer;
-        transition: all 0.2s ease;
-        user-select: none;
-        font-family: var(--orca-fontfamily-ui);
-        width: fit-content;
-        min-width: 0;
-      `
 
       // 移除颜色逻辑，使用默认样式
 
       // 创建标签内容
       const tagContent = document.createElement('span')
+      tagContent.className = 'page-display-tag-content'
       tagContent.textContent = `#${tag.name}`
-      tagContent.style.cssText = `
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      `
 
       // 添加图标
       if (tag.icon) {
         const iconElement = document.createElement('span')
-        iconElement.className = `ti ${tag.icon}`
-        iconElement.style.cssText = `
-          font-size: 12px;
-          flex-shrink: 0;
-          margin-right: 2px;
-        `
+        iconElement.className = `ti ${tag.icon} page-display-tag-icon`
         tagElement.appendChild(iconElement)
       }
 
