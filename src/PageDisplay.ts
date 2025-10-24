@@ -2897,14 +2897,9 @@ const typeConfigs = [
     }
 
     try {
-      // 优先使用orca.utils.pinyin API
-      if (orca.utils && (orca.utils as any).pinyin && typeof (orca.utils as any).pinyin.match === 'function') {
-        return (orca.utils as any).pinyin.match(text, pinyinQuery)
-      }
-      
       // 使用pinyin-match库进行拼音匹配
       const match = pinyinMatch.match(text, pinyinQuery)
-      return match !== false && match.length > 0
+      return match !== false
     } catch (error) {
       this.logError("拼音匹配失败:", error)
       return false
@@ -2923,68 +2918,260 @@ const typeConfigs = [
     }
 
     try {
-      // 优先使用orca.utils.pinyin API
-      if (orca.utils && (orca.utils as any).pinyin && typeof (orca.utils as any).pinyin.getMatchRanges === 'function') {
-        return (orca.utils as any).pinyin.getMatchRanges(text, pinyinQuery)
+      // 检测是否是首字母查询（如 "bl", "zhw" 等）
+      const isInitialQuery = /^[a-z]+$/.test(pinyinQuery.toLowerCase().replace(/\s+/g, ''))
+      
+      // 如果是首字母查询，尝试扩展匹配连续的字符
+      if (isInitialQuery && pinyinQuery.length >= 2) {
+        console.log(`[拼音调试] 检测到首字母查询: "${pinyinQuery}"，尝试扩展匹配`)
+        const expandedRanges = this.getExpandedPinyinRanges(text, pinyinQuery)
+        if (expandedRanges.length > 0) {
+          console.log(`[拼音调试] 扩展匹配成功，找到 ${expandedRanges.length} 个范围`)
+          return expandedRanges
+        }
       }
       
       // 使用pinyin-match库获取匹配范围
       const match = pinyinMatch.match(text, pinyinQuery)
+      console.log(`[拼音调试] 文本: "${text}", 查询: "${pinyinQuery}", match 结果:`, match)
       
-      if (match !== false) {
-        
-        // pinyin-match返回的是匹配的文本片段数组
-        if (Array.isArray(match) && match.length > 0) {
+      if (match === false) {
+        // 没有匹配，尝试更宽松的匹配策略
+        console.log(`[拼音调试] pinyin-match未找到匹配，尝试宽松匹配策略`)
+        return this.getLoosePinyinMatchRanges(text, pinyinQuery)
+      }
+
           const ranges: Array<{start: number, end: number}> = []
-          const processedTexts = new Set<string>() // 避免重复处理相同的文本
-          
-          match.forEach((matchedText: any) => {
-            if (typeof matchedText === 'string' && !processedTexts.has(matchedText)) {
-              processedTexts.add(matchedText)
-              
-              // 在原文中查找匹配文本的位置
+      
+      // pinyin-match 返回 [startIndex, endIndex] 表示第一个匹配的位置
+      if (Array.isArray(match) && match.length === 2 && typeof match[0] === 'number' && typeof match[1] === 'number') {
+        const startIndex = match[0]
+        const endIndex = match[1]
+        
+        // 提取第一个匹配的子串
+        const matchedSubstring = text.substring(startIndex, endIndex)
+        console.log(`[拼音调试] 第一个匹配子串: "${matchedSubstring}", 位置: [${startIndex}, ${endIndex})`)
+        
+        // 防止空字符串导致无限循环
+        if (matchedSubstring.length === 0) {
+          console.log(`[拼音调试] 匹配子串为空，跳过`)
+          return ranges
+        }
+        
+        // 在整个文本中查找所有该子串的出现位置
+        let index = 0
+        while ((index = text.indexOf(matchedSubstring, index)) !== -1) {
+          ranges.push({
+            start: index,
+            end: index + matchedSubstring.length
+          })
+          console.log(`[拼音调试] 找到匹配位置: [${index}, ${index + matchedSubstring.length}), 文本: "${matchedSubstring}"`)
+          index += matchedSubstring.length
+        }
+      } else if (Array.isArray(match) && match.length > 0) {
+        // 处理其他数组格式（字符串数组）
+        match.forEach((matchedText: any) => {
+          if (typeof matchedText === 'string' && matchedText.length > 0) {
+            // 在原文中查找该匹配文本的所有出现位置
               let index = 0
               while ((index = text.indexOf(matchedText, index)) !== -1) {
                 ranges.push({
                   start: index,
                   end: index + matchedText.length
                 })
+              console.log(`[拼音调试] 找到匹配位置: [${index}, ${index + matchedText.length}), 文本: "${matchedText}"`)
                 index += matchedText.length
               }
-            } else if (typeof matchedText === 'number') {
-              // 处理数字类型的匹配结果（可能是位置信息）
-              if (matchedText >= 0 && matchedText < text.length) {
-                ranges.push({
-                  start: matchedText,
-                  end: matchedText + 1
-                })
-              }
-            }
-          })
-          
-          return ranges
+          }
+        })
         } else if (typeof match === 'string') {
-          // 如果返回的是字符串，直接查找
-          const ranges: Array<{start: number, end: number}> = []
+        // 如果返回的是字符串，在原文中查找所有出现位置
           const matchStr = match as string
+        if (matchStr.length > 0) {
           let index = 0
           while ((index = text.indexOf(matchStr, index)) !== -1) {
             ranges.push({
               start: index,
               end: index + matchStr.length
             })
+            console.log(`[拼音调试] 找到匹配位置: [${index}, ${index + matchStr.length}), 文本: "${matchStr}"`)
             index += matchStr.length
           }
-          return ranges
         }
       }
       
-      // 如果pinyin-match没有找到匹配，尝试更宽松的匹配策略
-      this.log(`pinyin-match未找到匹配，尝试宽松匹配策略`)
-      return this.getLoosePinyinMatchRanges(text, pinyinQuery)
+      console.log(`[拼音调试] 总共找到 ${ranges.length} 个匹配范围`)
+      return ranges
     } catch (error) {
       this.logError("获取拼音匹配范围失败:", error)
       return []
+    }
+  }
+
+  /**
+   * 扩展拼音首字母匹配，尝试匹配连续的多个字符
+   * 例如 "bl" 应该匹配 "哔哩" 而不只是 "哔"
+   * 
+   * 策略：
+   * - 短查询（1-3个字符）：按首字母匹配
+   * - 长查询（4+个字符）：按音节分解匹配（例如 "bili" → "bi" + "li" 匹配 "哔哩"）
+   */
+  private getExpandedPinyinRanges(text: string, query: string): Array<{start: number, end: number}> {
+    const lowerQuery = query.toLowerCase()
+    
+    // 策略1: 如果查询较短（1-3个字符），按首字母匹配
+    if (lowerQuery.length <= 3) {
+      return this.matchByInitials(text, lowerQuery)
+    }
+    
+    // 策略2: 如果查询较长（4+字符），按音节分解匹配
+    return this.matchPinyinSyllables(text, lowerQuery)
+  }
+
+  /**
+   * 音节分解匹配：将查询按拼音音节分解来匹配连续的字符
+   * 例如 "bili" 分解为 "bi" + "li"，匹配 "哔" + "哩" = "哔哩"
+   */
+  private matchPinyinSyllables(text: string, query: string): Array<{start: number, end: number}> {
+    const ranges: Array<{start: number, end: number}> = []
+    
+    console.log(`[音节匹配] 开始匹配文本: "${text}", 查询: "${query}"`)
+    
+    // 遍历文本的每个位置
+    for (let i = 0; i < text.length; i++) {
+      let queryPos = 0  // 当前在查询字符串中的位置
+      let charCount = 0 // 匹配了几个字符
+      
+      // 从位置 i 开始，尝试逐字符匹配音节
+      for (let j = i; j < text.length && queryPos < query.length; j++) {
+        const char = text[j]
+        
+        // 尝试用当前字符匹配查询的剩余部分
+        const syllableLength = this.tryMatchCharPinyin(char, query.substring(queryPos))
+        
+        console.log(`[音节匹配-字符] 位置${j}: "${char}", 剩余查询: "${query.substring(queryPos)}", 匹配音节长度: ${syllableLength}`)
+        
+        if (syllableLength > 0) {
+          // 匹配成功，移动查询位置
+          queryPos += syllableLength
+          charCount++
+        } else {
+          // 匹配失败，跳出
+          break
+        }
+      }
+      
+      // 如果查询字符串完全匹配完了
+      if (queryPos === query.length && charCount > 0) {
+        ranges.push({
+          start: i,
+          end: i + charCount
+        })
+        console.log(`[音节匹配-成功] 找到: "${text.substring(i, i + charCount)}" [${i}, ${i + charCount})`)
+        // 跳过已匹配的部分
+        i += charCount - 1
+      }
+    }
+    
+    console.log(`[音节匹配] 总共找到 ${ranges.length} 个范围`)
+    return ranges
+  }
+
+  /**
+   * 尝试用单个字符匹配查询的前缀音节
+   * @param char 要匹配的单个字符
+   * @param queryPrefix 查询字符串的前缀部分
+   * @returns 如果匹配成功，返回匹配的音节长度（如 "bi" 返回 2）；否则返回 0
+   */
+  private tryMatchCharPinyin(char: string, queryPrefix: string): number {
+    // 尝试不同长度的音节（从长到短，优先匹配更长的音节）
+    // 拼音音节最长6个字母（如 zhuang），最短1个字母
+    for (let len = Math.min(6, queryPrefix.length); len >= 1; len--) {
+      const syllable = queryPrefix.substring(0, len)
+      
+      try {
+        // 使用 pinyin-match 检查字符是否匹配这个音节
+        const match = pinyinMatch.match(char, syllable)
+        console.log(`[音节匹配-尝试详细] 字符: "${char}", 音节: "${syllable}", match结果:`, match, `类型: ${typeof match}, 是数组: ${Array.isArray(match)}`)
+        
+        // 如果匹配且是完整匹配（从开头到结尾）
+        if (match !== false && Array.isArray(match)) {
+          const matchStart = match[0]
+          const matchEnd = match[1]
+          console.log(`[音节匹配-尝试详细] matchStart: ${matchStart}, matchEnd: ${matchEnd}`)
+          
+          // 匹配必须从字符开头开始，并且覆盖整个字符
+          // pinyin-match 返回闭区间 [startIndex, endIndex]，单字符匹配返回 [0, 0]
+          if (matchStart === 0 && matchEnd === 0) {
+            console.log(`[音节匹配-成功匹配] 字符 "${char}" 成功匹配音节 "${syllable}"`)
+            return len
+          }
+        }
+      } catch (error) {
+        // 忽略错误，继续尝试
+        console.log(`[音节匹配-错误] 字符: "${char}", 音节: "${syllable}", 错误:`, error)
+      }
+    }
+    
+    return 0 // 没有匹配
+  }
+
+  /**
+   * 按拼音首字母匹配连续字符
+   */
+  private matchByInitials(text: string, query: string): Array<{start: number, end: number}> {
+    const ranges: Array<{start: number, end: number}> = []
+    const queryChars = query.split('')
+    
+    // 遍历文本，尝试找到连续字符的拼音首字母匹配
+    for (let i = 0; i < text.length; i++) {
+      let matchLength = 0
+      let queryIndex = 0
+      
+      // 从当前位置开始，尝试匹配连续的字符
+      for (let j = i; j < text.length && queryIndex < queryChars.length; j++) {
+        const char = text[j]
+        const targetInitial = queryChars[queryIndex]
+        
+        // 检查当前字符的拼音首字母是否匹配
+        if (this.checkPinyinInitial(char, targetInitial)) {
+          matchLength++
+          queryIndex++
+        } else {
+          // 不匹配，跳出
+          break
+        }
+      }
+      
+      // 如果成功匹配了所有查询字符
+      if (queryIndex === queryChars.length && matchLength > 0) {
+        ranges.push({
+          start: i,
+          end: i + matchLength
+        })
+        console.log(`[扩展匹配-首字母] 找到: "${text.substring(i, i + matchLength)}" [${i}, ${i + matchLength})`)
+        // 跳过已匹配的部分
+        i += matchLength - 1
+      }
+    }
+    
+    return ranges
+  }
+
+  /**
+   * 检查字符的拼音首字母是否匹配目标字母
+   */
+  private checkPinyinInitial(char: string, targetInitial: string): boolean {
+    try {
+      // 使用 pinyin-match 检查单个字符
+      const match = pinyinMatch.match(char, targetInitial)
+      // 如果匹配且是从开头匹配的
+      if (match !== false && Array.isArray(match) && match[0] === 0) {
+        return true
+      }
+      return false
+    } catch (error) {
+      return false
     }
   }
 
@@ -3085,31 +3272,34 @@ const typeConfigs = [
     const ranges: Array<{start: number, end: number}> = []
     
     if (Array.isArray(match) && match.length > 0) {
-      const processedTexts = new Set<string>()
-      
+      // 遍历所有匹配的文本片段
       match.forEach((matchedText: any) => {
-        if (typeof matchedText === 'string' && !processedTexts.has(matchedText)) {
-          processedTexts.add(matchedText)
-          
+        if (typeof matchedText === 'string' && matchedText.length > 0) {
+          // 在原文中查找该匹配文本的所有出现位置
           let index = 0
           while ((index = text.indexOf(matchedText, index)) !== -1) {
             ranges.push({
               start: index,
               end: index + matchedText.length
             })
+            console.log(`[convertMatchToRanges] 找到位置: [${index}, ${index + matchedText.length}), 文本: "${matchedText}"`)
             index += matchedText.length
           }
         }
       })
     } else if (typeof match === 'string') {
+      // 如果返回的是字符串，在原文中查找所有出现位置
       const matchStr = match as string
+      if (matchStr.length > 0) {
       let index = 0
       while ((index = text.indexOf(matchStr, index)) !== -1) {
         ranges.push({
           start: index,
           end: index + matchStr.length
         })
+          console.log(`[convertMatchToRanges] 找到位置: [${index}, ${index + matchStr.length}), 文本: "${matchStr}"`)
         index += matchStr.length
+        }
       }
     }
     
