@@ -1670,13 +1670,13 @@ export class PageDisplay {
     selectAllBtn.textContent = '全选'
     selectAllBtn.className = 'page-display-type-filter-title-btn'
     
-    // 设置按钮样式
+    // 设置按钮样式 - 使用 CSS 变量适配主题
     selectAllBtn.style.cssText = `
       padding: 3px 6px;
       font-size: 11px;
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: var(--orca-color-bg-2);
+      color: var(--orca-color-text-1);
+      border: var(--orca-border-general);
       border-radius: 3px;
       cursor: pointer;
       transition: all 0.2s;
@@ -1684,10 +1684,10 @@ export class PageDisplay {
     
     // 添加悬浮效果
     selectAllBtn.addEventListener('mouseenter', () => {
-      selectAllBtn.style.background = 'rgba(255, 255, 255, 0.2)'
+      selectAllBtn.style.background = 'var(--orca-color-bg-3)'
     })
     selectAllBtn.addEventListener('mouseleave', () => {
-      selectAllBtn.style.background = 'rgba(255, 255, 255, 0.1)'
+      selectAllBtn.style.background = 'var(--orca-color-bg-2)'
     })
     selectAllBtn.addEventListener('click', () => {
       optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
@@ -1702,10 +1702,10 @@ export class PageDisplay {
     // 应用相同的按钮样式
     selectNoneBtn.style.cssText = selectAllBtn.style.cssText
     selectNoneBtn.addEventListener('mouseenter', () => {
-      selectNoneBtn.style.background = 'rgba(255, 255, 255, 0.2)'
+      selectNoneBtn.style.background = 'var(--orca-color-bg-3)'
     })
     selectNoneBtn.addEventListener('mouseleave', () => {
-      selectNoneBtn.style.background = 'rgba(255, 255, 255, 0.1)'
+      selectNoneBtn.style.background = 'var(--orca-color-bg-2)'
     })
     selectNoneBtn.addEventListener('click', () => {
       optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
@@ -1717,23 +1717,23 @@ export class PageDisplay {
     confirmBtn.textContent = '确认'
     confirmBtn.className = 'page-display-type-filter-confirm-btn'
     
-    // 设置确认按钮样式（绿色主题）
+    // 设置确认按钮样式 - 使用 Orca 主题色
     confirmBtn.style.cssText = `
       padding: 3px 6px;
       font-size: 11px;
-      background: rgba(34, 197, 94, 0.2);
-      color: white;
-      border: 1px solid rgba(34, 197, 94, 0.4);
+      background: var(--orca-color-primary-5);
+      color: var(--orca-color-bg-1);
+      border: 1px solid var(--orca-color-primary-6);
       border-radius: 3px;
       cursor: pointer;
       transition: all 0.2s;
     `
     
     confirmBtn.addEventListener('mouseenter', () => {
-      confirmBtn.style.background = 'rgba(34, 197, 94, 0.3)'
+      confirmBtn.style.background = 'var(--orca-color-primary-6)'
     })
     confirmBtn.addEventListener('mouseleave', () => {
-      confirmBtn.style.background = 'rgba(34, 197, 94, 0.2)'
+      confirmBtn.style.background = 'var(--orca-color-primary-5)'
     })
     confirmBtn.addEventListener('click', () => {
       // 应用所有复选框的状态
@@ -1762,23 +1762,23 @@ export class PageDisplay {
     cancelBtn.textContent = '取消'
     cancelBtn.className = 'page-display-type-filter-cancel-btn'
     
-    // 设置取消按钮样式（红色主题）
+    // 设置取消按钮样式 - 使用 CSS 变量适配主题
     cancelBtn.style.cssText = `
       padding: 3px 6px;
       font-size: 11px;
-      background: rgba(239, 68, 68, 0.2);
-      color: white;
-      border: 1px solid rgba(239, 68, 68, 0.4);
+      background: var(--orca-color-bg-2);
+      color: var(--orca-color-text-1);
+      border: var(--orca-border-general);
       border-radius: 3px;
       cursor: pointer;
       transition: all 0.2s;
     `
     
     cancelBtn.addEventListener('mouseenter', () => {
-      cancelBtn.style.background = 'rgba(239, 68, 68, 0.3)'
+      cancelBtn.style.background = 'var(--orca-color-bg-3)'
     })
     cancelBtn.addEventListener('mouseleave', () => {
-      cancelBtn.style.background = 'rgba(239, 68, 68, 0.2)'
+      cancelBtn.style.background = 'var(--orca-color-bg-2)'
     })
     cancelBtn.addEventListener('click', () => {
       // 恢复原始状态
@@ -1841,23 +1841,23 @@ const typeConfigs = [
       const option = document.createElement('div')
       option.className = 'page-display-type-filter-option'
       
-      // 设置选项样式
+      // 设置选项样式 - 使用 CSS 变量适配主题
       option.style.cssText = `
         display: flex;
         align-items: center;
         gap: 6px;
         padding: 4px;
         border-radius: 4px;
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--orca-color-bg-2);
         transition: background 0.2s;
       `
       
       // 添加悬浮效果
       option.addEventListener('mouseenter', () => {
-        option.style.background = 'rgba(255, 255, 255, 0.1)'
+        option.style.background = 'var(--orca-color-bg-3)'
       })
       option.addEventListener('mouseleave', () => {
-        option.style.background = 'rgba(255, 255, 255, 0.05)'
+        option.style.background = 'var(--orca-color-bg-2)'
       })
       
       const checkbox = document.createElement('input')
@@ -1877,14 +1877,14 @@ const typeConfigs = [
       label.htmlFor = `type-filter-${config.type}`
       label.className = 'page-display-type-filter-label'
       
-      // 设置标签样式
+      // 设置标签样式 - 使用 CSS 变量适配主题
       label.style.cssText = `
         display: flex;
         align-items: center;
         gap: 6px;
         cursor: pointer;
         font-size: 12px;
-        color: white;
+        color: var(--orca-color-text-1);
         user-select: none;
       `
       
@@ -1899,20 +1899,20 @@ const typeConfigs = [
         gap: 6px;
       `
       
-      // 添加图标
+      // 添加图标 - 使用 CSS 变量适配主题
       const icon = document.createElement('span')
       icon.className = `ti ${config.icon}`
       icon.style.cssText = `
         font-size: 12px;
-        color: white;
+        color: var(--orca-color-text-2);
       `
       
-      // 添加文本
+      // 添加文本 - 使用 CSS 变量适配主题
       const text = document.createElement('span')
       text.textContent = config.label
       text.style.cssText = `
         font-size: 12px;
-        color: white;
+        color: var(--orca-color-text-1);
       `
       
       labelContent.appendChild(icon)
