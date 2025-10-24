@@ -30,6 +30,7 @@
 .page-display-search-icon,
 .page-display-filter-icon,
 .page-display-date-filter-icon,
+.page-display-sort-icon,
 .page-display-icons-toggle-icon,
 .page-display-multiline-toggle-icon,
 .page-display-multicolumn-toggle-icon {
@@ -56,6 +57,7 @@
 .page-display-search-icon:hover,
 .page-display-filter-icon:hover,
 .page-display-date-filter-icon:hover,
+.page-display-sort-icon:hover,
 .page-display-icons-toggle-icon:hover,
 .page-display-multiline-toggle-icon:hover,
 .page-display-multicolumn-toggle-icon:hover,

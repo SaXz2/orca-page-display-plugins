@@ -32,6 +32,24 @@ interface DateFilterConfig {
 }
 
 /**
+ * 排序字段类型
+ */
+type SortField = 'created' | 'modified' | 'name'
+
+/**
+ * 排序方向类型
+ */
+type SortOrder = 'asc' | 'desc'
+
+/**
+ * 排序配置接口
+ */
+interface SortConfig {
+  field: SortField
+  order: SortOrder
+}
+
+/**
  * 面板状态接口
  */
 interface PanelState {
@@ -41,6 +59,7 @@ interface PanelState {
   typeFilters: Record<string, boolean>
   dateFilter: DateFilterConfig
   scrollTop: number
+  sortConfig: SortConfig
 }
 
 /**
@@ -405,6 +424,8 @@ class StyleManager {
       'page-display-count',
       'page-display-search-icon',
       'page-display-filter-icon',
+      'page-display-date-filter-icon',
+      'page-display-sort-icon',
       'page-display-icons-toggle-icon',
       'page-display-multiline-toggle-icon',
       'page-display-multicolumn-toggle-icon',
@@ -464,6 +485,8 @@ class StyleManager {
         break
         
       case 'page-display-filter-icon':
+      case 'page-display-date-filter-icon':
+      case 'page-display-sort-icon':
       case 'page-display-icons-toggle-icon':
       case 'page-display-multiline-toggle-icon':
       case 'page-display-multicolumn-toggle-icon':
@@ -925,7 +948,11 @@ export class PageDisplay {
           enabled: false,
           dateField: 'created'
         },
-        scrollTop: 0
+        scrollTop: 0,
+        sortConfig: {
+          field: 'created',
+          order: 'desc'
+        }
       })
     }
     return this.panelStates.get(panelId)!
@@ -2408,6 +2435,265 @@ const typeConfigs = [
     
     return panel
   }
+
+  /**
+   * 创建排序控制面板
+   * @returns 排序面板元素
+   */
+  private createSortPanel(): HTMLElement {
+    const panel = document.createElement('div')
+    panel.className = 'page-display-sort-panel'
+    this.applyStyles(panel, 'page-display-sort-panel')
+    
+    // 设置初始显示状态和透明度过渡，使用虎鲸笔记原生样式变量
+    panel.style.cssText = `
+      display: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+      transform: translateY(-10px);
+      background: var(--orca-color-bg-1);
+      border: var(--orca-border-general);
+      border-radius: var(--orca-radius-lg);
+      box-shadow: var(--orca-shadow-popup);
+      padding: var(--orca-spacing-lg);
+      min-width: 200px;
+      z-index: var(--orca-zindex-modal);
+      font-family: var(--orca-fontfamily-ui);
+      color: var(--orca-color-text-1);
+    `
+    
+    // 创建面板标题
+    const title = document.createElement('div')
+    title.textContent = '排序选项'
+    title.style.cssText = `
+      font-size: var(--orca-fontsize-md);
+      font-weight: var(--orca-fontweight-lg);
+      color: var(--orca-color-text-1);
+      margin-bottom: var(--orca-spacing-md);
+      padding-bottom: var(--orca-spacing-sm);
+      border-bottom: var(--orca-border-separator);
+    `
+    
+    // 创建排序字段选择容器
+    const sortFieldContainer = document.createElement('div')
+    sortFieldContainer.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: var(--orca-spacing-sm);
+      margin-bottom: var(--orca-spacing-md);
+    `
+    
+    const sortFieldLabel = document.createElement('div')
+    sortFieldLabel.textContent = '排序字段:'
+    sortFieldLabel.style.cssText = `
+      font-size: var(--orca-fontsize-sm);
+      font-weight: var(--orca-fontweight-md);
+      color: var(--orca-color-text-1);
+    `
+    
+    // 创建排序字段单选按钮组
+    const sortFieldOptions = [
+      { value: 'created', label: '创建时间' },
+      { value: 'modified', label: '修改时间' },
+      { value: 'name', label: '名称' }
+    ]
+    
+    const sortFieldRadioGroup = document.createElement('div')
+    sortFieldRadioGroup.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: var(--orca-spacing-xs);
+    `
+    
+    sortFieldOptions.forEach(option => {
+      const radioContainer = document.createElement('div')
+      radioContainer.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: var(--orca-spacing-xs);
+        padding: var(--orca-spacing-xs);
+        border-radius: var(--orca-radius-sm);
+        cursor: pointer;
+        transition: background 0.2s ease;
+      `
+      
+      radioContainer.addEventListener('mouseenter', () => {
+        radioContainer.style.background = 'var(--orca-color-bg-2)'
+      })
+      radioContainer.addEventListener('mouseleave', () => {
+        radioContainer.style.background = 'transparent'
+      })
+      
+      const radio = document.createElement('input')
+      radio.type = 'radio'
+      radio.name = 'sort-field'
+      radio.value = option.value
+      radio.id = `sort-field-${option.value}`
+      radio.style.cssText = `
+        margin: 0;
+        cursor: pointer;
+      `
+      
+      const label = document.createElement('label')
+      label.htmlFor = `sort-field-${option.value}`
+      label.textContent = option.label
+      label.style.cssText = `
+        cursor: pointer;
+        font-size: var(--orca-fontsize-sm);
+        color: var(--orca-color-text-1);
+        user-select: none;
+      `
+      
+      radioContainer.appendChild(radio)
+      radioContainer.appendChild(label)
+      sortFieldRadioGroup.appendChild(radioContainer)
+    })
+    
+    sortFieldContainer.appendChild(sortFieldLabel)
+    sortFieldContainer.appendChild(sortFieldRadioGroup)
+    
+    // 创建排序方向选择容器
+    const sortOrderContainer = document.createElement('div')
+    sortOrderContainer.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: var(--orca-spacing-sm);
+      margin-bottom: var(--orca-spacing-md);
+    `
+    
+    const sortOrderLabel = document.createElement('div')
+    sortOrderLabel.textContent = '排序方向:'
+    sortOrderLabel.style.cssText = `
+      font-size: var(--orca-fontsize-sm);
+      font-weight: var(--orca-fontweight-md);
+      color: var(--orca-color-text-1);
+    `
+    
+    // 创建排序方向单选按钮组
+    const sortOrderOptions = [
+      { value: 'desc', label: '降序' },
+      { value: 'asc', label: '升序' }
+    ]
+    
+    const sortOrderRadioGroup = document.createElement('div')
+    sortOrderRadioGroup.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: var(--orca-spacing-xs);
+    `
+    
+    sortOrderOptions.forEach(option => {
+      const radioContainer = document.createElement('div')
+      radioContainer.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: var(--orca-spacing-xs);
+        padding: var(--orca-spacing-xs);
+        border-radius: var(--orca-radius-sm);
+        cursor: pointer;
+        transition: background 0.2s ease;
+      `
+      
+      radioContainer.addEventListener('mouseenter', () => {
+        radioContainer.style.background = 'var(--orca-color-bg-2)'
+      })
+      radioContainer.addEventListener('mouseleave', () => {
+        radioContainer.style.background = 'transparent'
+      })
+      
+      const radio = document.createElement('input')
+      radio.type = 'radio'
+      radio.name = 'sort-order'
+      radio.value = option.value
+      radio.id = `sort-order-${option.value}`
+      radio.style.cssText = `
+        margin: 0;
+        cursor: pointer;
+      `
+      
+      const label = document.createElement('label')
+      label.htmlFor = `sort-order-${option.value}`
+      label.textContent = option.label
+      label.style.cssText = `
+        cursor: pointer;
+        font-size: var(--orca-fontsize-sm);
+        color: var(--orca-color-text-1);
+        user-select: none;
+      `
+      
+      radioContainer.appendChild(radio)
+      radioContainer.appendChild(label)
+      sortOrderRadioGroup.appendChild(radioContainer)
+    })
+    
+    sortOrderContainer.appendChild(sortOrderLabel)
+    sortOrderContainer.appendChild(sortOrderRadioGroup)
+    
+    // 创建按钮容器
+    const buttonsContainer = document.createElement('div')
+    buttonsContainer.style.cssText = `
+      display: flex;
+      gap: 4px;
+      justify-content: flex-end;
+      align-items: center;
+    `
+    
+    // 创建取消按钮
+    const cancelBtn = document.createElement('button')
+    cancelBtn.textContent = '取消'
+    cancelBtn.className = 'page-display-sort-cancel-btn'
+    cancelBtn.style.cssText = `
+      padding: 3px 6px;
+      font-size: 11px;
+      background: rgba(239, 68, 68, 0.2);
+      color: white;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.2s;
+    `
+    
+    cancelBtn.addEventListener('mouseenter', () => {
+      cancelBtn.style.background = 'rgba(239, 68, 68, 0.3)'
+    })
+    cancelBtn.addEventListener('mouseleave', () => {
+      cancelBtn.style.background = 'rgba(239, 68, 68, 0.2)'
+    })
+    
+    // 创建确认按钮
+    const confirmBtn = document.createElement('button')
+    confirmBtn.textContent = '确认'
+    confirmBtn.className = 'page-display-sort-confirm-btn'
+    confirmBtn.style.cssText = `
+      padding: 3px 6px;
+      font-size: 11px;
+      background: rgba(34, 197, 94, 0.2);
+      color: white;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.2s;
+    `
+    
+    confirmBtn.addEventListener('mouseenter', () => {
+      confirmBtn.style.background = 'rgba(34, 197, 94, 0.3)'
+    })
+    confirmBtn.addEventListener('mouseleave', () => {
+      confirmBtn.style.background = 'rgba(34, 197, 94, 0.2)'
+    })
+    
+    buttonsContainer.appendChild(confirmBtn)
+    buttonsContainer.appendChild(cancelBtn)
+    
+    // 组装面板
+    panel.appendChild(title)
+    panel.appendChild(sortFieldContainer)
+    panel.appendChild(sortOrderContainer)
+    panel.appendChild(buttonsContainer)
+    
+    return panel
+  }
   
   /**
    * 获取当前面板标识
@@ -2938,6 +3224,34 @@ const typeConfigs = [
     // 删除 referenced 类型后，不再需要排序 referenced 组
 
     return result
+  }
+
+  /**
+   * 根据用户自定义排序配置比较两个项目
+   * @param a 第一个项目
+   * @param b 第二个项目
+   * @param sortConfig 排序配置
+   * @returns 比较结果（负数、0或正数）
+   */
+  private compareItemsByUserSort(a: PageDisplayItem, b: PageDisplayItem, sortConfig: SortConfig): number {
+    let compareResult = 0
+    
+    if (sortConfig.field === 'created') {
+      const aCreated = a.created || 0
+      const bCreated = b.created || 0
+      compareResult = aCreated - bCreated
+    } else if (sortConfig.field === 'modified') {
+      const aModified = a.modified || 0
+      const bModified = b.modified || 0
+      compareResult = aModified - bModified
+    } else if (sortConfig.field === 'name') {
+      const aName = a.text.toLowerCase()
+      const bName = b.text.toLowerCase()
+      compareResult = aName.localeCompare(bName, 'zh-CN')
+    }
+    
+    // 应用排序方向
+    return sortConfig.order === 'asc' ? compareResult : -compareResult
   }
 
   private sortReferencedGroup(items: PageDisplayItem[], tagBlockIds: DbId[], containedInBlockIds: DbId[]): void {
@@ -6567,10 +6881,22 @@ const typeConfigs = [
     this.applyStyles(multiColumnToggleIcon, 'page-display-multicolumn-toggle-icon')
     multiColumnToggleIcon.title = this.multiColumn ? '单列显示' : '多列显示'
     
+    // 创建排序图标
+    const sortIcon = document.createElement('div')
+    // 从面板状态中获取当前排序配置，设置初始图标
+    const initialState = this.getPanelState(targetPanelId)
+    const initialSortConfig = initialState.sortConfig || { field: 'created', order: 'desc' }
+    const initialIcon = initialSortConfig.order === 'asc' ? 'ti-sort-ascending' : 'ti-sort-descending'
+    sortIcon.innerHTML = `<i class="ti ${initialIcon}"></i>`
+    sortIcon.className = 'page-display-sort-icon'
+    this.applyStyles(sortIcon, 'page-display-sort-icon')
+    sortIcon.title = '排序选项'
+    
     // 将所有按钮添加到容器中
     functionButtonsContainer.appendChild(searchIcon)
     functionButtonsContainer.appendChild(filterIcon)
     functionButtonsContainer.appendChild(dateFilterIcon)
+    functionButtonsContainer.appendChild(sortIcon)
     functionButtonsContainer.appendChild(iconsToggleIcon)
     functionButtonsContainer.appendChild(multiLineToggleIcon)
     functionButtonsContainer.appendChild(multiColumnToggleIcon)
@@ -6590,6 +6916,10 @@ const typeConfigs = [
     // 创建日期过滤控制面板
     const dateFilterPanel = this.createDateFilterPanel()
     container.appendChild(dateFilterPanel)
+    
+    // 创建排序控制面板
+    const sortPanel = this.createSortPanel()
+    container.appendChild(sortPanel)
     
     // 折叠状态和搜索状态
     let isTransitioning = false
@@ -6668,6 +6998,104 @@ const typeConfigs = [
         dateFilterPanel.style.transform = 'translateY(-10px)'
       }
     })
+    
+    // 排序图标点击事件
+    let isSortPanelVisible = false
+    sortIcon.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // 添加点击反馈
+      sortIcon.style.transform = 'scale(0.95)'
+      setTimeout(() => {
+        sortIcon.style.transform = 'scale(1)'
+      }, 100)
+      
+      isSortPanelVisible = !isSortPanelVisible
+      
+      if (isSortPanelVisible) {
+        // 显示面板 - 使用透明度过渡
+        sortPanel.style.display = 'block'
+        // 强制重排以确保初始状态正确
+        sortPanel.offsetHeight
+        sortPanel.style.opacity = '1'
+        sortPanel.style.visibility = 'visible'
+        sortPanel.style.transform = 'translateY(0)'
+        sortIcon.style.background = 'var(--page-display-search-bg-hover)'
+        
+        // 从面板状态中恢复当前设置
+        const currentState = this.getPanelState(targetPanelId)
+        const sortConfig = currentState.sortConfig || { field: 'created', order: 'desc' }
+        
+        // 设置单选按钮的选中状态
+        const fieldRadio = sortPanel.querySelector(`#sort-field-${sortConfig.field}`) as HTMLInputElement
+        if (fieldRadio) {
+          fieldRadio.checked = true
+        }
+        
+        const orderRadio = sortPanel.querySelector(`#sort-order-${sortConfig.order}`) as HTMLInputElement
+        if (orderRadio) {
+          orderRadio.checked = true
+        }
+      } else {
+        // 隐藏面板 - 立即设置display为none，避免空白区域
+        sortPanel.style.display = 'none'
+        sortPanel.style.opacity = '0'
+        sortPanel.style.visibility = 'hidden'
+        sortPanel.style.transform = 'translateY(-10px)'
+        sortIcon.style.background = 'var(--page-display-search-bg)'
+      }
+    })
+    
+    // 排序面板的确认按钮事件
+    const sortConfirmBtn = sortPanel.querySelector('.page-display-sort-confirm-btn') as HTMLButtonElement
+    if (sortConfirmBtn) {
+      sortConfirmBtn.addEventListener('click', () => {
+        // 获取选中的排序字段和方向
+        const selectedField = sortPanel.querySelector('input[name="sort-field"]:checked') as HTMLInputElement
+        const selectedOrder = sortPanel.querySelector('input[name="sort-order"]:checked') as HTMLInputElement
+        
+        if (selectedField && selectedOrder) {
+          const currentState = this.getPanelState(targetPanelId)
+          currentState.sortConfig = {
+            field: selectedField.value as SortField,
+            order: selectedOrder.value as SortOrder
+          }
+          this.savePanelState(targetPanelId, currentState)
+          
+          // 更新排序图标，根据排序方向显示不同图标
+          const icon = sortIcon.querySelector('i')
+          if (icon) {
+            icon.className = selectedOrder.value === 'asc' ? 'ti ti-sort-ascending' : 'ti ti-sort-descending'
+          }
+          
+          // 触发更新显示
+          updateDisplay()
+        }
+        
+        // 隐藏面板
+        isSortPanelVisible = false
+        sortPanel.style.display = 'none'
+        sortPanel.style.opacity = '0'
+        sortPanel.style.visibility = 'hidden'
+        sortPanel.style.transform = 'translateY(-10px)'
+        sortIcon.style.background = 'var(--page-display-search-bg)'
+      })
+    }
+    
+    // 排序面板的取消按钮事件
+    const sortCancelBtn = sortPanel.querySelector('.page-display-sort-cancel-btn') as HTMLButtonElement
+    if (sortCancelBtn) {
+      sortCancelBtn.addEventListener('click', () => {
+        // 隐藏面板
+        isSortPanelVisible = false
+        sortPanel.style.display = 'none'
+        sortPanel.style.opacity = '0'
+        sortPanel.style.visibility = 'hidden'
+        sortPanel.style.transform = 'translateY(-10px)'
+        sortIcon.style.background = 'var(--page-display-search-bg)'
+      })
+    }
     
     // 图标显示切换按钮事件
     iconsToggleIcon.addEventListener('click', (e) => {
@@ -6950,22 +7378,47 @@ const typeConfigs = [
       filteredItems = this.applyDateFilter(filteredItems)
       this.log(`PageDisplay: 日期过滤前: ${beforeDateFilterCount} 项, 日期过滤后: ${filteredItems.length} 项`)
       
-      // 对过滤后的项目进行置顶排序：包含于块(非子标签)置顶显示
+      // 获取用户自定义排序配置
+      const currentState = this.getPanelState(targetPanelId)
+      const sortConfig = currentState.sortConfig || { field: 'created', order: 'desc' }
+      
+      // 应用完整的排序逻辑：保留原有的类型优先级，在同一优先级内应用用户排序
       filteredItems = filteredItems.sort((a, b) => {
         const aIsContainedIn = containedInBlockIds.includes(a.id)
         const bIsContainedIn = containedInBlockIds.includes(b.id)
         const aIsTag = tagBlockIds.includes(a.id)
         const bIsTag = tagBlockIds.includes(b.id)
         
-        // 判断是否为包含于块但不是子标签
+        // 第一级判断：包含于块(非子标签) - 最高优先级
         const aIsContainedInNotTag = aIsContainedIn && !aIsTag
         const bIsContainedInNotTag = bIsContainedIn && !bIsTag
         
-        // 包含于块(非子标签)置顶显示
         if (aIsContainedInNotTag && !bIsContainedInNotTag) return -1
         if (!aIsContainedInNotTag && bIsContainedInNotTag) return 1
         
-        return 0  // 其他保持原顺序
+        // 如果都是包含于块(非子标签)，在同一优先级内应用用户自定义排序
+        if (aIsContainedInNotTag && bIsContainedInNotTag) {
+          return this.compareItemsByUserSort(a, b, sortConfig)
+        }
+        
+        // 第二级判断：包含于块(是子标签)
+        const aIsContainedInTag = aIsContainedIn && aIsTag
+        const bIsContainedInTag = bIsContainedIn && bIsTag
+        
+        if (aIsContainedInTag && !bIsContainedInTag) return -1
+        if (!aIsContainedInTag && bIsContainedInTag) return 1
+        
+        // 如果都是包含于块(是子标签)，在同一优先级内应用用户自定义排序
+        if (aIsContainedInTag && bIsContainedInTag) {
+          return this.compareItemsByUserSort(a, b, sortConfig)
+        }
+        
+        // 第三级判断：标签块
+        if (aIsTag && !bIsTag) return -1
+        if (!aIsTag && bIsTag) return 1
+        
+        // 如果都是标签块，或都是其他类型，应用用户自定义排序
+        return this.compareItemsByUserSort(a, b, sortConfig)
       })
       
       // 更新页面统计
