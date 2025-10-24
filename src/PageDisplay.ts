@@ -2923,21 +2923,17 @@ const typeConfigs = [
       
       // 如果是首字母查询，尝试扩展匹配连续的字符
       if (isInitialQuery && pinyinQuery.length >= 2) {
-        console.log(`[拼音调试] 检测到首字母查询: "${pinyinQuery}"，尝试扩展匹配`)
         const expandedRanges = this.getExpandedPinyinRanges(text, pinyinQuery)
         if (expandedRanges.length > 0) {
-          console.log(`[拼音调试] 扩展匹配成功，找到 ${expandedRanges.length} 个范围`)
           return expandedRanges
         }
       }
       
       // 使用pinyin-match库获取匹配范围
       const match = pinyinMatch.match(text, pinyinQuery)
-      console.log(`[拼音调试] 文本: "${text}", 查询: "${pinyinQuery}", match 结果:`, match)
       
       if (match === false) {
         // 没有匹配，尝试更宽松的匹配策略
-        console.log(`[拼音调试] pinyin-match未找到匹配，尝试宽松匹配策略`)
         return this.getLoosePinyinMatchRanges(text, pinyinQuery)
       }
 
@@ -2950,11 +2946,9 @@ const typeConfigs = [
         
         // 提取第一个匹配的子串
         const matchedSubstring = text.substring(startIndex, endIndex)
-        console.log(`[拼音调试] 第一个匹配子串: "${matchedSubstring}", 位置: [${startIndex}, ${endIndex})`)
         
         // 防止空字符串导致无限循环
         if (matchedSubstring.length === 0) {
-          console.log(`[拼音调试] 匹配子串为空，跳过`)
           return ranges
         }
         
@@ -2965,7 +2959,6 @@ const typeConfigs = [
             start: index,
             end: index + matchedSubstring.length
           })
-          console.log(`[拼音调试] 找到匹配位置: [${index}, ${index + matchedSubstring.length}), 文本: "${matchedSubstring}"`)
           index += matchedSubstring.length
         }
       } else if (Array.isArray(match) && match.length > 0) {
@@ -2979,7 +2972,6 @@ const typeConfigs = [
                   start: index,
                   end: index + matchedText.length
                 })
-              console.log(`[拼音调试] 找到匹配位置: [${index}, ${index + matchedText.length}), 文本: "${matchedText}"`)
                 index += matchedText.length
               }
           }
@@ -2994,13 +2986,11 @@ const typeConfigs = [
               start: index,
               end: index + matchStr.length
             })
-            console.log(`[拼音调试] 找到匹配位置: [${index}, ${index + matchStr.length}), 文本: "${matchStr}"`)
             index += matchStr.length
           }
         }
       }
       
-      console.log(`[拼音调试] 总共找到 ${ranges.length} 个匹配范围`)
       return ranges
     } catch (error) {
       this.logError("获取拼音匹配范围失败:", error)
@@ -3035,8 +3025,6 @@ const typeConfigs = [
   private matchPinyinSyllables(text: string, query: string): Array<{start: number, end: number}> {
     const ranges: Array<{start: number, end: number}> = []
     
-    console.log(`[音节匹配] 开始匹配文本: "${text}", 查询: "${query}"`)
-    
     // 遍历文本的每个位置
     for (let i = 0; i < text.length; i++) {
       let queryPos = 0  // 当前在查询字符串中的位置
@@ -3048,8 +3036,6 @@ const typeConfigs = [
         
         // 尝试用当前字符匹配查询的剩余部分
         const syllableLength = this.tryMatchCharPinyin(char, query.substring(queryPos))
-        
-        console.log(`[音节匹配-字符] 位置${j}: "${char}", 剩余查询: "${query.substring(queryPos)}", 匹配音节长度: ${syllableLength}`)
         
         if (syllableLength > 0) {
           // 匹配成功，移动查询位置
@@ -3067,13 +3053,11 @@ const typeConfigs = [
           start: i,
           end: i + charCount
         })
-        console.log(`[音节匹配-成功] 找到: "${text.substring(i, i + charCount)}" [${i}, ${i + charCount})`)
         // 跳过已匹配的部分
         i += charCount - 1
       }
     }
     
-    console.log(`[音节匹配] 总共找到 ${ranges.length} 个范围`)
     return ranges
   }
 
@@ -3092,24 +3076,20 @@ const typeConfigs = [
       try {
         // 使用 pinyin-match 检查字符是否匹配这个音节
         const match = pinyinMatch.match(char, syllable)
-        console.log(`[音节匹配-尝试详细] 字符: "${char}", 音节: "${syllable}", match结果:`, match, `类型: ${typeof match}, 是数组: ${Array.isArray(match)}`)
         
         // 如果匹配且是完整匹配（从开头到结尾）
         if (match !== false && Array.isArray(match)) {
           const matchStart = match[0]
           const matchEnd = match[1]
-          console.log(`[音节匹配-尝试详细] matchStart: ${matchStart}, matchEnd: ${matchEnd}`)
           
           // 匹配必须从字符开头开始，并且覆盖整个字符
           // pinyin-match 返回闭区间 [startIndex, endIndex]，单字符匹配返回 [0, 0]
           if (matchStart === 0 && matchEnd === 0) {
-            console.log(`[音节匹配-成功匹配] 字符 "${char}" 成功匹配音节 "${syllable}"`)
             return len
           }
         }
       } catch (error) {
         // 忽略错误，继续尝试
-        console.log(`[音节匹配-错误] 字符: "${char}", 音节: "${syllable}", 错误:`, error)
       }
     }
     
@@ -3149,7 +3129,6 @@ const typeConfigs = [
           start: i,
           end: i + matchLength
         })
-        console.log(`[扩展匹配-首字母] 找到: "${text.substring(i, i + matchLength)}" [${i}, ${i + matchLength})`)
         // 跳过已匹配的部分
         i += matchLength - 1
       }
@@ -3282,7 +3261,6 @@ const typeConfigs = [
               start: index,
               end: index + matchedText.length
             })
-            console.log(`[convertMatchToRanges] 找到位置: [${index}, ${index + matchedText.length}), 文本: "${matchedText}"`)
             index += matchedText.length
           }
         }
@@ -3297,7 +3275,6 @@ const typeConfigs = [
           start: index,
           end: index + matchStr.length
         })
-          console.log(`[convertMatchToRanges] 找到位置: [${index}, ${index + matchStr.length}), 文本: "${matchStr}"`)
         index += matchStr.length
         }
       }
@@ -6996,6 +6973,13 @@ const typeConfigs = [
       flex-shrink: 0;
     `
     
+    // 创建刷新图标
+    const refreshIcon = document.createElement('div')
+    refreshIcon.innerHTML = '<i class="ti ti-refresh"></i>'
+    refreshIcon.className = 'page-display-refresh-icon'
+    this.applyStyles(refreshIcon, 'page-display-refresh-icon')
+    refreshIcon.title = '刷新页面空间'
+    
     // 创建搜索图标
     const searchIcon = document.createElement('div')
     searchIcon.innerHTML = '<i class="ti ti-search"></i>'
@@ -7047,6 +7031,7 @@ const typeConfigs = [
     sortIcon.title = '排序选项'
     
     // 将所有按钮添加到容器中
+    functionButtonsContainer.appendChild(refreshIcon)
     functionButtonsContainer.appendChild(searchIcon)
     functionButtonsContainer.appendChild(filterIcon)
     functionButtonsContainer.appendChild(dateFilterIcon)
@@ -7086,6 +7071,35 @@ const typeConfigs = [
     
     leftContent.addEventListener('mouseleave', () => {
       arrow.style.opacity = '0'
+    })
+    
+    // 刷新图标点击事件
+    refreshIcon.addEventListener('click', async (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // 添加旋转动画
+      const icon = refreshIcon.querySelector('i')
+      if (icon) {
+        icon.style.transition = 'transform 0.5s ease'
+        icon.style.transform = 'rotate(360deg)'
+        
+        // 动画结束后重置
+        setTimeout(() => {
+          icon.style.transform = 'rotate(0deg)'
+        }, 500)
+      }
+      
+      // 强制刷新当前面板数据
+      try {
+        // 先清除所有缓存（包括 API 服务缓存）
+        this.clearCache()
+        this.apiService.clearCache()
+        // 然后强制更新
+        await this.performUpdate(true)
+      } catch (error) {
+        this.logError('刷新页面空间失败:', error)
+      }
     })
     
     // 搜索图标点击事件
