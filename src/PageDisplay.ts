@@ -260,7 +260,7 @@ class ApiService {
     
     // 从文本内容中提取标签（#标签格式）
     if (block.text) {
-      const tagMatches = block.text.match(/#[\w\u4e00-\u9fa5]+/g)
+      const tagMatches = block.text.match(/#[\w\u4e00-\u9fa5：:]+/g)
       if (tagMatches) {
         for (const tagMatch of tagMatches) {
           const tag = tagMatch.substring(1) // 去掉#符号
@@ -1209,7 +1209,7 @@ export class PageDisplay {
     
     // 从文本内容中提取标签（#标签格式）
     if (block.text) {
-      const tagMatches = block.text.match(/#[\w\u4e00-\u9fa5]+/g)
+      const tagMatches = block.text.match(/#[\w\u4e00-\u9fa5：:]+/g)
       if (tagMatches) {
         for (const tagMatch of tagMatches) {
           const tag = tagMatch.substring(1) // 去掉#符号
@@ -1306,8 +1306,15 @@ export class PageDisplay {
       tagElement.addEventListener('click', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        // 可以在这里添加标签点击的处理逻辑，比如搜索或过滤
-        console.log(`Tag clicked: ${tag.name}`)
+        
+        // 检查是否按下了Shift键
+        if (e.shiftKey) {
+          // Shift+点击：在侧面板打开标签块
+          this.openTagInSidePanel(tag.name)
+        } else {
+          // 普通点击：在当前面板打开标签块
+          this.openTag(tag.name)
+        }
       })
 
       tagContainer.appendChild(tagElement)
@@ -7906,6 +7913,56 @@ const typeConfigs = [
   }
 
   /**
+   * 打开标签块
+   * @param tagName 标签名称
+   */
+  private async openTag(tagName: string): Promise<void> {
+    this.log(`PageDisplay: Opening tag ${tagName}`)
+    
+    try {
+      // 通过别名查找标签对应的块ID
+      const blockId = await this.findBlockIdByAlias(tagName)
+      if (blockId) {
+        // 使用找到的块ID打开标签块
+        orca.nav.goTo("block", { blockId: blockId })
+        this.log(`PageDisplay: Successfully opened tag ${tagName} with blockId ${blockId}`)
+      } else {
+        orca.notify("warn", `未找到标签 "${tagName}" 对应的块`)
+        this.log(`PageDisplay: Tag ${tagName} not found`)
+      }
+    } catch (error) {
+      console.error("PageDisplay: Failed to open tag:", error)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      orca.notify("error", `打开标签失败: ${errorMessage}`)
+    }
+  }
+
+  /**
+   * 在侧面板中打开标签块
+   * @param tagName 标签名称
+   */
+  private async openTagInSidePanel(tagName: string): Promise<void> {
+    this.log(`PageDisplay: Opening tag ${tagName} in side panel`)
+    
+    try {
+      // 通过别名查找标签对应的块ID
+      const blockId = await this.findBlockIdByAlias(tagName)
+      if (blockId) {
+        // 使用找到的块ID在侧面板打开标签块
+        orca.nav.openInLastPanel("block", { blockId: blockId })
+        this.log(`PageDisplay: Successfully opened tag ${tagName} in side panel with blockId ${blockId}`)
+      } else {
+        orca.notify("warn", `未找到标签 "${tagName}" 对应的块`)
+        this.log(`PageDisplay: Tag ${tagName} not found`)
+      }
+    } catch (error) {
+      console.error("PageDisplay: Failed to open tag in side panel:", error)
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      orca.notify("error", `在侧面板打开标签失败: ${errorMessage}`)
+    }
+  }
+
+  /**
    * 设置DOM观察器
    * 监听页面变化，当标签层级结构出现时自动更新显示
    */
@@ -8049,7 +8106,15 @@ const typeConfigs = [
         e.preventDefault()
         e.stopPropagation()
         this.log("PageDisplay: Breadcrumb level clicked", { blockId: item.id, text: item.text })
-        this.openBlock(item.id)
+        
+        // 检查是否按下了Shift键
+        if (e.shiftKey) {
+          // Shift+点击：在侧面板打开
+          this.openBlockInSidePanel(item.id)
+        } else {
+          // 普通点击：在当前面板打开
+          this.openBlock(item.id)
+        }
       })
       
       // 添加悬停效果
