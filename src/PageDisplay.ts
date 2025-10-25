@@ -592,21 +592,6 @@ class StyleManager {
   }
 }
 
-/**
- * 面板状态接口
- */
-interface PanelState {
-  /** 搜索内容 */
-  searchText: string
-  /** 是否展开 */
-  isExpanded: boolean
-  /** 是否显示搜索框 */
-  isSearchVisible: boolean
-  /** 类型过滤状态 */
-  typeFilters: Record<string, boolean>
-  /** 滚动位置 */
-  scrollTop: number
-}
 
 /**
  * 页面显示项目类型
@@ -7082,7 +7067,10 @@ const typeConfigs = [
     
     // 折叠状态和搜索状态
     let isTransitioning = false
-    let isSearchVisible = false
+    
+    // 从保存的状态中恢复面板显示状态
+    const currentState = this.getPanelState(targetPanelId)
+    let isSearchVisible = currentState.isSearchVisible
     
     // 添加悬浮效果
     leftContent.addEventListener('mouseenter', () => {
@@ -7481,6 +7469,16 @@ const typeConfigs = [
         setTimeout(() => {
           functionButtonsContainer.style.opacity = '1'
         }, 50)
+        
+        // 恢复搜索框的显示状态（如果之前是显示的）
+        if (isSearchVisible) {
+          searchContainer.style.display = 'block'
+          setTimeout(() => {
+            searchContainer.style.opacity = '1'
+            searchContainer.style.maxHeight = '100px'
+            searchIcon.style.background = 'var(--page-display-search-bg-hover)'
+          }, 50)
+        }
         
         // 恢复类型过滤面板的显示（如果之前是显示的）
         const typeFilterPanel = container.querySelector('.page-display-type-filter-panel') as HTMLElement
