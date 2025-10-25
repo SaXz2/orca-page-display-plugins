@@ -724,7 +724,7 @@ export class PageDisplay {
   /** 多面板支持：存储每个面板的显示容器，key为面板标识 */
   private containers: Map<string, HTMLElement> = new Map()
   /** 多面板支持：存储每个面板的状态，包括搜索内容、展开状态等 */
-  private panelStates: Map<string, PanelState> = new Map()
+  private panelStates: Map<DbId, PanelState> = new Map()
   /** 插件名称，用于数据存储和API调用 */
   private pluginName: string
   /** 设置加载完成的任务 */
@@ -755,6 +755,10 @@ export class PageDisplay {
   private pageCollapseStates: Map<DbId, boolean> = new Map()
   /** 控制默认折叠状态，新页面默认是否折叠 */
   private defaultCollapsed: boolean = true
+  /** 控制每个页面的类型过滤面板显示状态，key为根块ID */
+  private pageTypeFilterStates: Map<DbId, boolean> = new Map()
+  /** 控制每个页面的日期过滤面板显示状态，key为根块ID */
+  private pageDateFilterStates: Map<DbId, boolean> = new Map()
   /** 控制是否多行显示项目文本 */
   private multiLine: boolean = false
   /** 控制是否多列显示项目 */
@@ -921,12 +925,12 @@ export class PageDisplay {
 
   /**
    * 获取面板状态
-   * @param panelId 面板ID
+   * @param rootBlockId 根块ID
    * @returns 面板状态，如果不存在则返回默认状态
    */
-  private getPanelState(panelId: string): PanelState {
-    if (!this.panelStates.has(panelId)) {
-      this.panelStates.set(panelId, {
+  private getPanelState(rootBlockId: DbId): PanelState {
+    if (!this.panelStates.has(rootBlockId)) {
+      this.panelStates.set(rootBlockId, {
         searchText: '',
         isExpanded: !this.defaultCollapsed,
         isSearchVisible: false,
@@ -942,25 +946,27 @@ export class PageDisplay {
         }
       })
     }
-    return this.panelStates.get(panelId)!
+    return this.panelStates.get(rootBlockId)!
   }
 
   /**
    * 保存面板状态
-   * @param panelId 面板ID
+   * @param rootBlockId 根块ID
    * @param state 面板状态
    */
-  private savePanelState(panelId: string, state: PanelState) {
-    this.panelStates.set(panelId, state)
+  private savePanelState(rootBlockId: DbId, state: PanelState) {
+    this.panelStates.set(rootBlockId, state)
+    // 保存到本地存储
+    this.saveSettings()
   }
 
   /**
    * 恢复面板状态到DOM
-   * @param panelId 面板ID
+   * @param rootBlockId 根块ID
    * @param container 容器元素
    */
-  private restorePanelState(panelId: string, container: HTMLElement) {
-    const state = this.getPanelState(panelId)
+  private restorePanelState(rootBlockId: DbId, container: HTMLElement) {
+    const state = this.getPanelState(rootBlockId)
     
     // 恢复搜索框状态
     const searchInput = container.querySelector('.page-display-search-input') as HTMLInputElement
@@ -3844,6 +3850,52 @@ const typeConfigs = [
     this.defaultCollapsed = collapsed
     this.saveSettings()
     this.log(`PageDisplay: 默认折叠状态已设置为: ${collapsed ? '折叠' : '展开'}`)
+  }
+
+  /**
+   * 获取当前页面的类型过滤面板显示状态
+   * @returns 是否显示类型过滤面板
+   */
+  private getCurrentPageTypeFilterState(): boolean {
+    const rootBlockId = this.getCurrentRootBlockId()
+    if (!rootBlockId) return false
+    
+    return this.pageTypeFilterStates.get(rootBlockId) || false
+  }
+
+  /**
+   * 设置当前页面的类型过滤面板显示状态
+   * @param visible 是否显示
+   */
+  private setCurrentPageTypeFilterState(visible: boolean): void {
+    const rootBlockId = this.getCurrentRootBlockId()
+    if (rootBlockId) {
+      this.pageTypeFilterStates.set(rootBlockId, visible)
+      this.saveSettings()
+    }
+  }
+
+  /**
+   * 获取当前页面的日期过滤面板显示状态
+   * @returns 是否显示日期过滤面板
+   */
+  private getCurrentPageDateFilterState(): boolean {
+    const rootBlockId = this.getCurrentRootBlockId()
+    if (!rootBlockId) return false
+    
+    return this.pageDateFilterStates.get(rootBlockId) || false
+  }
+
+  /**
+   * 设置当前页面的日期过滤面板显示状态
+   * @param visible 是否显示
+   */
+  private setCurrentPageDateFilterState(visible: boolean): void {
+    const rootBlockId = this.getCurrentRootBlockId()
+    if (rootBlockId) {
+      this.pageDateFilterStates.set(rootBlockId, visible)
+      this.saveSettings()
+    }
   }
 
   /**
@@ -6893,6 +6945,10 @@ const typeConfigs = [
     const targetPanelId = panelId || this.getCurrentPanelId()
     this.log("PageDisplay: Target panel ID:", targetPanelId)
     
+    // 获取当前根块ID用于状态管理
+    const rootBlockId = this.getCurrentRootBlockId()
+    this.log("PageDisplay: Root block ID:", rootBlockId)
+    
     // 移除目标面板的现有显示
     this.removeDisplay(targetPanelId)
 
@@ -7026,8 +7082,8 @@ const typeConfigs = [
     // 创建排序图标
     const sortIcon = document.createElement('div')
     // 从面板状态中获取当前排序配置，设置初始图标
-    const initialState = this.getPanelState(targetPanelId)
-    const initialSortConfig = initialState.sortConfig || { field: 'created', order: 'desc' }
+    const initialState = rootBlockId ? this.getPanelState(rootBlockId) : null
+    const initialSortConfig = initialState?.sortConfig || { field: 'created', order: 'desc' }
     const initialIcon = initialSortConfig.order === 'asc' ? 'ti-sort-ascending' : 'ti-sort-descending'
     sortIcon.innerHTML = `<i class="ti ${initialIcon}"></i>`
     sortIcon.className = 'page-display-sort-icon'
@@ -7069,8 +7125,8 @@ const typeConfigs = [
     let isTransitioning = false
     
     // 从保存的状态中恢复面板显示状态
-    const currentState = this.getPanelState(targetPanelId)
-    let isSearchVisible = currentState.isSearchVisible
+    const currentState = rootBlockId ? this.getPanelState(rootBlockId) : null
+    let isSearchVisible = currentState?.isSearchVisible || false
     
     // 添加悬浮效果
     leftContent.addEventListener('mouseenter', () => {
@@ -7151,28 +7207,31 @@ const typeConfigs = [
         filterIcon.style.transform = 'scale(1)'
       }, 100)
       
-      this.toggleTypeFilters()
-      
-      if (this.showTypeFilters) {
-        // 隐藏其他面板
-        hideOtherPanels('typeFilter')
+      if (rootBlockId) {
+        const currentVisible = this.getCurrentPageTypeFilterState()
+        this.setCurrentPageTypeFilterState(!currentVisible)
         
-        // 显示面板 - 使用透明度过渡
-        typeFilterPanel.style.display = 'block'
-        // 强制重排以确保初始状态正确
-        typeFilterPanel.offsetHeight
-        typeFilterPanel.style.opacity = '1'
-        typeFilterPanel.style.visibility = 'visible'
-        typeFilterPanel.style.transform = 'translateY(0)'
-        
-        // 更新复选框状态
-        this.updateTypeFilterPanelCheckboxes(typeFilterPanel)
-      } else {
-        // 隐藏面板 - 立即设置display为none，避免空白区域
-        typeFilterPanel.style.display = 'none'
-        typeFilterPanel.style.opacity = '0'
-        typeFilterPanel.style.visibility = 'hidden'
-        typeFilterPanel.style.transform = 'translateY(-10px)'
+        if (!currentVisible) {
+          // 隐藏其他面板
+          hideOtherPanels('typeFilter')
+          
+          // 显示面板 - 使用透明度过渡
+          typeFilterPanel.style.display = 'block'
+          // 强制重排以确保初始状态正确
+          typeFilterPanel.offsetHeight
+          typeFilterPanel.style.opacity = '1'
+          typeFilterPanel.style.visibility = 'visible'
+          typeFilterPanel.style.transform = 'translateY(0)'
+          
+          // 更新复选框状态
+          this.updateTypeFilterPanelCheckboxes(typeFilterPanel)
+        } else {
+          // 隐藏面板 - 立即设置display为none，避免空白区域
+          typeFilterPanel.style.display = 'none'
+          typeFilterPanel.style.opacity = '0'
+          typeFilterPanel.style.visibility = 'hidden'
+          typeFilterPanel.style.transform = 'translateY(-10px)'
+        }
       }
     })
     
@@ -7187,25 +7246,28 @@ const typeConfigs = [
         dateFilterIcon.style.transform = 'scale(1)'
       }, 100)
       
-      this.toggleDateFilters()
-      
-      if (this.showDateFilters) {
-        // 隐藏其他面板
-        hideOtherPanels('dateFilter')
+      if (rootBlockId) {
+        const currentVisible = this.getCurrentPageDateFilterState()
+        this.setCurrentPageDateFilterState(!currentVisible)
         
-        // 显示面板 - 使用透明度过渡
-        dateFilterPanel.style.display = 'block'
-        // 强制重排以确保初始状态正确
-        dateFilterPanel.offsetHeight
-        dateFilterPanel.style.opacity = '1'
-        dateFilterPanel.style.visibility = 'visible'
-        dateFilterPanel.style.transform = 'translateY(0)'
-      } else {
-        // 隐藏面板 - 立即设置display为none，避免空白区域
-        dateFilterPanel.style.display = 'none'
-        dateFilterPanel.style.opacity = '0'
-        dateFilterPanel.style.visibility = 'hidden'
-        dateFilterPanel.style.transform = 'translateY(-10px)'
+        if (!currentVisible) {
+          // 隐藏其他面板
+          hideOtherPanels('dateFilter')
+          
+          // 显示面板 - 使用透明度过渡
+          dateFilterPanel.style.display = 'block'
+          // 强制重排以确保初始状态正确
+          dateFilterPanel.offsetHeight
+          dateFilterPanel.style.opacity = '1'
+          dateFilterPanel.style.visibility = 'visible'
+          dateFilterPanel.style.transform = 'translateY(0)'
+        } else {
+          // 隐藏面板 - 立即设置display为none，避免空白区域
+          dateFilterPanel.style.display = 'none'
+          dateFilterPanel.style.opacity = '0'
+          dateFilterPanel.style.visibility = 'hidden'
+          dateFilterPanel.style.transform = 'translateY(-10px)'
+        }
       }
     })
     
@@ -7234,8 +7296,8 @@ const typeConfigs = [
         sortIcon.style.background = 'var(--page-display-search-bg-hover)'
         
         // 从面板状态中恢复当前设置
-        const currentState = this.getPanelState(targetPanelId)
-        const sortConfig = currentState.sortConfig || { field: 'created', order: 'desc' }
+        const currentState = rootBlockId ? this.getPanelState(rootBlockId) : null
+        const sortConfig = currentState?.sortConfig || { field: 'created', order: 'desc' }
         
         // 设置单选按钮的选中状态
         const fieldRadio = sortPanel.querySelector(`#sort-field-${sortConfig.field}`) as HTMLInputElement
@@ -7265,13 +7327,13 @@ const typeConfigs = [
         const selectedField = sortPanel.querySelector('input[name="sort-field"]:checked') as HTMLInputElement
         const selectedOrder = sortPanel.querySelector('input[name="sort-order"]:checked') as HTMLInputElement
         
-        if (selectedField && selectedOrder) {
-          const currentState = this.getPanelState(targetPanelId)
+        if (selectedField && selectedOrder && rootBlockId) {
+          const currentState = this.getPanelState(rootBlockId)
           currentState.sortConfig = {
             field: selectedField.value as SortField,
             order: selectedOrder.value as SortOrder
           }
-          this.savePanelState(targetPanelId, currentState)
+          this.savePanelState(rootBlockId, currentState)
           
           // 更新排序图标，根据排序方向显示不同图标
           const icon = sortIcon.querySelector('i')
@@ -7486,25 +7548,25 @@ const typeConfigs = [
           }, 50)
         }
         
-        // 恢复类型过滤面板的显示（如果之前是显示的）
-        const typeFilterPanel = container.querySelector('.page-display-type-filter-panel') as HTMLElement
-        if (typeFilterPanel && this.showTypeFilters) {
-          typeFilterPanel.style.display = 'block'
-          setTimeout(() => {
-            typeFilterPanel.style.opacity = '1'
-            typeFilterPanel.style.transform = 'translateY(0)'
-          }, 50)
-        }
-        
-        // 恢复日期过滤面板的显示（如果之前是显示的）
-        const dateFilterPanel = container.querySelector('.page-display-date-filter-panel') as HTMLElement
-        if (dateFilterPanel && this.showDateFilters) {
-          dateFilterPanel.style.display = 'block'
-          setTimeout(() => {
-            dateFilterPanel.style.opacity = '1'
-            dateFilterPanel.style.transform = 'translateY(0)'
-          }, 50)
-        }
+    // 恢复类型过滤面板的显示（如果之前是显示的）
+    const typeFilterPanel = container.querySelector('.page-display-type-filter-panel') as HTMLElement
+    if (typeFilterPanel && rootBlockId && this.getCurrentPageTypeFilterState()) {
+      typeFilterPanel.style.display = 'block'
+      setTimeout(() => {
+        typeFilterPanel.style.opacity = '1'
+        typeFilterPanel.style.transform = 'translateY(0)'
+      }, 50)
+    }
+    
+    // 恢复日期过滤面板的显示（如果之前是显示的）
+    const dateFilterPanel = container.querySelector('.page-display-date-filter-panel') as HTMLElement
+    if (dateFilterPanel && rootBlockId && this.getCurrentPageDateFilterState()) {
+      dateFilterPanel.style.display = 'block'
+      setTimeout(() => {
+        dateFilterPanel.style.opacity = '1'
+        dateFilterPanel.style.transform = 'translateY(0)'
+      }, 50)
+    }
         
         // 搜索框只有在用户主动点击搜索图标时才显示
         // 这里不自动显示搜索框
@@ -7515,9 +7577,11 @@ const typeConfigs = [
       }
       
       // 保存展开状态
-      const currentState = this.getPanelState(targetPanelId)
-      currentState.isExpanded = !newCollapsed
-      this.savePanelState(targetPanelId, currentState)
+      if (rootBlockId) {
+        const currentState = this.getPanelState(rootBlockId)
+        currentState.isExpanded = !newCollapsed
+        this.savePanelState(rootBlockId, currentState)
+      }
     }
     
     // 添加点击事件
@@ -7544,33 +7608,33 @@ const typeConfigs = [
           }, 200)
           isSearchVisible = false
           // 保存搜索框状态
-          const currentState = this.getPanelState(targetPanelId)
-          currentState.isSearchVisible = false
-          this.savePanelState(targetPanelId, currentState)
+          if (rootBlockId) {
+            const currentState = this.getPanelState(rootBlockId)
+            currentState.isSearchVisible = false
+            this.savePanelState(rootBlockId, currentState)
+          }
         }
       }
       
       if (currentPanel !== 'typeFilter') {
         // 隐藏类型过滤面板
-        if (this.showTypeFilters) {
+        if (rootBlockId && this.getCurrentPageTypeFilterState()) {
           typeFilterPanel.style.display = 'none'
           typeFilterPanel.style.opacity = '0'
           typeFilterPanel.style.visibility = 'hidden'
           typeFilterPanel.style.transform = 'translateY(-10px)'
-          this.showTypeFilters = false
-          this.saveSettings()
+          this.setCurrentPageTypeFilterState(false)
         }
       }
       
       if (currentPanel !== 'dateFilter') {
         // 隐藏日期过滤面板
-        if (this.showDateFilters) {
+        if (rootBlockId && this.getCurrentPageDateFilterState()) {
           dateFilterPanel.style.display = 'none'
           dateFilterPanel.style.opacity = '0'
           dateFilterPanel.style.visibility = 'hidden'
           dateFilterPanel.style.transform = 'translateY(-10px)'
-          this.showDateFilters = false
-          this.saveSettings()
+          this.setCurrentPageDateFilterState(false)
         }
       }
     }
@@ -7606,9 +7670,11 @@ const typeConfigs = [
       }
       
       // 保存搜索框显示状态
-      const currentState = this.getPanelState(targetPanelId)
-      currentState.isSearchVisible = isSearchVisible
-      this.savePanelState(targetPanelId, currentState)
+      if (rootBlockId) {
+        const currentState = this.getPanelState(rootBlockId)
+        currentState.isSearchVisible = isSearchVisible
+        this.savePanelState(rootBlockId, currentState)
+      }
     }
 
     // 创建搜索框（默认隐藏）
@@ -7702,8 +7768,8 @@ const typeConfigs = [
       this.log(`PageDisplay: 日期过滤前: ${beforeDateFilterCount} 项, 日期过滤后: ${filteredItems.length} 项`)
       
       // 获取用户自定义排序配置
-      const currentState = this.getPanelState(targetPanelId)
-      const sortConfig = currentState.sortConfig || { field: 'created', order: 'desc' }
+      const currentState = rootBlockId ? this.getPanelState(rootBlockId) : null
+      const sortConfig = currentState?.sortConfig || { field: 'created', order: 'desc' }
       
       // 应用完整的排序逻辑：保留原有的类型优先级，在同一优先级内应用用户排序
       filteredItems = filteredItems.sort((a, b) => {
@@ -8188,9 +8254,11 @@ const typeConfigs = [
     searchInput.addEventListener('input', () => {
       updateDisplay()
       // 保存搜索状态
-      const currentState = this.getPanelState(targetPanelId)
-      currentState.searchText = searchInput.value
-      this.savePanelState(targetPanelId, currentState)
+      if (rootBlockId) {
+        const currentState = this.getPanelState(rootBlockId)
+        currentState.searchText = searchInput.value
+        this.savePanelState(rootBlockId, currentState)
+      }
     })
     
     // 添加ESC键事件监听 - 退出搜索激活状态
@@ -8214,8 +8282,8 @@ const typeConfigs = [
     }
     
     // 预设滚动位置，避免闪烁
-    const currentPanelState = this.getPanelState(targetPanelId)
-    if (currentPanelState.scrollTop > 0) {
+    const currentPanelState = rootBlockId ? this.getPanelState(rootBlockId) : null
+    if (currentPanelState && currentPanelState.scrollTop > 0) {
       list.scrollTop = currentPanelState.scrollTop
     }
     
@@ -8278,14 +8346,16 @@ const typeConfigs = [
     
     // 添加滚动事件监听器来保存滚动位置
     list.addEventListener('scroll', () => {
-      const currentState = this.getPanelState(targetPanelId)
-      currentState.scrollTop = list.scrollTop
-      this.savePanelState(targetPanelId, currentState)
+      if (rootBlockId) {
+        const currentState = this.getPanelState(rootBlockId)
+        currentState.scrollTop = list.scrollTop
+        this.savePanelState(rootBlockId, currentState)
+      }
     })
     
     // 在初始显示前设置搜索内容，避免闪烁
-    const initialPanelState = this.getPanelState(targetPanelId)
-    if (initialPanelState.searchText && initialPanelState.searchText.trim()) {
+    const initialPanelState = rootBlockId ? this.getPanelState(rootBlockId) : null
+    if (initialPanelState && initialPanelState.searchText && initialPanelState.searchText.trim()) {
       searchInput.value = initialPanelState.searchText
     }
     
@@ -8393,7 +8463,9 @@ const typeConfigs = [
     this.log("PageDisplay: Container visible:", container.offsetHeight > 0)
     
     // 恢复面板状态
-    this.restorePanelState(targetPanelId, container)
+    if (rootBlockId) {
+      this.restorePanelState(rootBlockId, container)
+    }
     
   }
 
