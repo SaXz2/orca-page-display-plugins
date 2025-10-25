@@ -7416,10 +7416,27 @@ const typeConfigs = [
         list.style.maxHeight = '0'
         arrow.innerHTML = '<i class="ti ti-chevron-right"></i>' // 折叠时箭头向右
         
+        // 隐藏功能按钮容器
+        functionButtonsContainer.style.opacity = '0'
+        
         // 如果搜索框是显示的，也隐藏它
         if (isSearchVisible) {
           searchContainer.style.opacity = '0'
           searchContainer.style.maxHeight = '0'
+        }
+        
+        // 隐藏类型过滤面板（如果存在且可见）
+        const typeFilterPanel = container.querySelector('.page-display-type-filter-panel') as HTMLElement
+        if (typeFilterPanel && typeFilterPanel.style.display !== 'none') {
+          typeFilterPanel.style.opacity = '0'
+          typeFilterPanel.style.transform = 'translateY(-10px)'
+        }
+        
+        // 隐藏日期过滤面板（如果存在且可见）
+        const dateFilterPanel = container.querySelector('.page-display-date-filter-panel') as HTMLElement
+        if (dateFilterPanel && dateFilterPanel.style.display !== 'none') {
+          dateFilterPanel.style.opacity = '0'
+          dateFilterPanel.style.transform = 'translateY(-10px)'
         }
         
         // 延迟设置display为none，确保过渡完成
@@ -7428,6 +7445,15 @@ const typeConfigs = [
             list.style.display = 'none'
             if (isSearchVisible) {
               searchContainer.style.display = 'none'
+            }
+            // 完全隐藏功能按钮容器
+            functionButtonsContainer.style.display = 'none'
+            // 完全隐藏过滤面板
+            if (typeFilterPanel && typeFilterPanel.style.display !== 'none') {
+              typeFilterPanel.style.display = 'none'
+            }
+            if (dateFilterPanel && dateFilterPanel.style.display !== 'none') {
+              dateFilterPanel.style.display = 'none'
             }
           }
           isTransitioning = false
@@ -7441,12 +7467,40 @@ const typeConfigs = [
         list.style.display = 'block'
         }
         
+        // 恢复功能按钮容器的显示
+        functionButtonsContainer.style.display = 'flex'
+        
         // 强制重排以触发过渡
         list.offsetHeight
         
         list.style.opacity = '1'
         list.style.maxHeight = '1000px'
         arrow.innerHTML = '<i class="ti ti-chevron-down"></i>' // 展开时箭头向下
+        
+        // 恢复功能按钮容器的透明度
+        setTimeout(() => {
+          functionButtonsContainer.style.opacity = '1'
+        }, 50)
+        
+        // 恢复类型过滤面板的显示（如果之前是显示的）
+        const typeFilterPanel = container.querySelector('.page-display-type-filter-panel') as HTMLElement
+        if (typeFilterPanel && this.showTypeFilters) {
+          typeFilterPanel.style.display = 'block'
+          setTimeout(() => {
+            typeFilterPanel.style.opacity = '1'
+            typeFilterPanel.style.transform = 'translateY(0)'
+          }, 50)
+        }
+        
+        // 恢复日期过滤面板的显示（如果之前是显示的）
+        const dateFilterPanel = container.querySelector('.page-display-date-filter-panel') as HTMLElement
+        if (dateFilterPanel && this.showDateFilters) {
+          dateFilterPanel.style.display = 'block'
+          setTimeout(() => {
+            dateFilterPanel.style.opacity = '1'
+            dateFilterPanel.style.transform = 'translateY(0)'
+          }, 50)
+        }
         
         // 搜索框只有在用户主动点击搜索图标时才显示
         // 这里不自动显示搜索框
