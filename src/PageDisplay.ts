@@ -596,7 +596,7 @@ class StyleManager {
 /**
  * 页面显示项目类型
  */
-type PageDisplayItemType = 'tag' | 'referenced-tag' | 'property-ref-alias' | 'property-ref-block' | 'contained-in' | 'inline-ref' | 'referencing-alias' | 'child-referenced-alias' | 'child-referenced-tag-alias' | 'child-referenced-inline' | 'backref-alias-blocks' | 'backref' | 'recursive-backref' | 'recursive-backref-alias' | 'page-direct-children' | 'page-recursive-children'
+type PageDisplayItemType = 'tag' | 'referenced-tag' | 'property-ref-alias' | 'property-ref-block' | 'contained-in' | 'inline-ref' | 'referencing-alias' | 'child-referenced-alias' | 'child-referenced-tag-alias' | 'child-referenced-inline' | 'backref-alias-blocks' | 'backref' | 'recursive-backref' | 'recursive-backref-alias' | 'backref-backref-alias' | 'backref-backref-block' | 'page-direct-children' | 'page-recursive-children'
 
 type DisplayMode = 'flat' | 'grouped'
 type DisplayGroupsMap = Record<PageDisplayItemType, PageDisplayItem[]>
@@ -714,6 +714,10 @@ interface GatheredData {
   recursiveBackrefBlocks: Block[]
   /** 递归反链别名块列表 */
   recursiveBackrefAliasBlocks: Block[]
+  /** 反链的反链别名块列表 */
+  backrefBackrefAliasBlocks: Block[]
+  /** 反链的反链块列表 */
+  backrefBackrefBlocks: Block[]
 }
 
 /**
@@ -1401,7 +1405,7 @@ export class PageDisplay {
   private initializeTypeFilters(): void {
     const allTypes: PageDisplayItemType[] = [
       'tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'page-direct-children', 'page-recursive-children', 'referencing-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline',
-      'backref-alias-blocks', 'backref', 'recursive-backref', 'recursive-backref-alias'
+      'backref-alias-blocks', 'backref', 'recursive-backref', 'recursive-backref-alias', 'backref-backref-alias', 'backref-backref-block'
     ]
     
     allTypes.forEach(type => {
@@ -1826,7 +1830,9 @@ const typeConfigs = [
   { type: 'referencing-alias', label: '直接反链别名', icon: 'ti-arrow-right' },
   { type: 'backref', label: '直接反链块', icon: 'ti-arrow-down' },
   { type: 'recursive-backref', label: '递归反链块', icon: 'ti-arrow-down-right' },
-  { type: 'recursive-backref-alias', label: '递归反链别名', icon: 'ti-arrow-right' }
+  { type: 'recursive-backref-alias', label: '递归反链别名', icon: 'ti-arrow-right' },
+  { type: 'backref-backref-alias', label: '反链的反链别名', icon: 'ti-arrow-right-up' },
+  { type: 'backref-backref-block', label: '反链的反链块', icon: 'ti-arrow-down-left' }
 ]
     
     // 创建每个类型的复选框 - 更紧凑的布局
@@ -3319,7 +3325,9 @@ const typeConfigs = [
       'backref-alias-blocks': [],
       'backref': [],
       'recursive-backref': [],
-      'recursive-backref-alias': []
+      'recursive-backref-alias': [],
+      'backref-backref-alias': [],
+      'backref-backref-block': []
     } as DisplayGroupsMap
   }
 
@@ -3332,7 +3340,7 @@ const typeConfigs = [
     const result = this.createEmptyGroups()
     const seen = new Set<string>()
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'page-direct-children', 'page-recursive-children', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'page-direct-children', 'page-recursive-children', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref', 'backref-backref-alias', 'backref-backref-block']
     for (const type of groupTypes) {
       const groupItems = source[type] ?? []
       for (const item of groupItems) {
@@ -4210,6 +4218,136 @@ const typeConfigs = [
     } catch (error) {
       this.logError("Failed to collect recursive backref aliases:", error)
     }
+  }
+
+  // 获取反链的反链别名块（使用query API优化）
+  private async getBackrefBackrefAliasBlocks(blockId: DbId): Promise<Block[]> {
+    return this.safeApiCall(
+      async () => {
+        if (!blockId) return []
+        
+        // 1. 获取当前块信息
+        const currentBlock = await this.apiService.getBlock(blockId)
+        if (!currentBlock?.backRefs?.length) return []
+
+        // 2. 获取直接反链块ID
+        const backrefBlockIds = currentBlock.backRefs.map(backRef => backRef.from).filter(id => id != null)
+        if (backrefBlockIds.length === 0) return []
+        
+        // 3. 批量获取直接反链块
+        const backrefBlocks = await this.cachedApiCall("get-blocks", backrefBlockIds)
+        if (!backrefBlocks?.length) return []
+        
+        // 4. 收集所有直接反链块的反链块ID
+        const backrefBackrefBlockIds = new Set<DbId>()
+        
+        for (const backrefBlock of backrefBlocks) {
+          if (backrefBlock.backRefs?.length) {
+            backrefBlock.backRefs.forEach((backRef: any) => {
+              if (backRef.from) backrefBackrefBlockIds.add(backRef.from)
+            })
+          }
+        }
+        
+        if (backrefBackrefBlockIds.size === 0) return []
+        
+        // 5. 批量获取反链的反链块
+        const backrefBackrefBlocks = await this.cachedApiCall("get-blocks", Array.from(backrefBackrefBlockIds))
+        if (!backrefBackrefBlocks?.length) return []
+        
+        // 6. 收集所有需要查询的块ID（子块 + 被引用块）
+        const allBlockIds = new Set<DbId>()
+        
+        backrefBackrefBlocks.forEach((block: any) => {
+          // 添加子块ID
+          if (block.children?.length) {
+            block.children.forEach((childId: any) => allBlockIds.add(childId))
+          }
+          // 添加被引用块ID
+          if (block.refs?.length) {
+            block.refs.forEach((ref: any) => {
+              if (ref.to) allBlockIds.add(ref.to)
+            })
+          }
+        })
+        
+        // 7. 一次性获取所有块
+        if (allBlockIds.size === 0) return []
+        
+        const allBlocks = await this.cachedApiCall("get-blocks", Array.from(allBlockIds))
+        if (!allBlocks?.length) return []
+        
+        // 8. 从子块中收集额外的被引用块ID
+        const additionalReferencedIds = new Set<DbId>()
+        allBlocks.forEach((block: any) => {
+          if (block.refs?.length) {
+            block.refs.forEach((ref: any) => {
+              if (ref.to) additionalReferencedIds.add(ref.to)
+            })
+          }
+        })
+        
+        // 9. 获取额外的被引用块
+        if (additionalReferencedIds.size > 0) {
+          const additionalBlocks = await this.cachedApiCall("get-blocks", Array.from(additionalReferencedIds))
+          if (additionalBlocks?.length) {
+            allBlocks.push(...additionalBlocks)
+          }
+        }
+        
+        // 10. 筛选别名块，排除自身块
+        return allBlocks.filter((block: any) => 
+          block?.aliases?.length > 0 && block.id !== blockId
+        )
+      },
+      "Failed to get backref-backref alias blocks:",
+      []
+    )
+  }
+
+  // 获取反链的反链块（非别名块）
+  private async getBackrefBackrefBlocks(blockId: DbId): Promise<Block[]> {
+    return this.safeApiCall(
+      async () => {
+        if (!blockId) return []
+        
+        // 1. 获取当前块信息
+        const currentBlock = await this.apiService.getBlock(blockId)
+        if (!currentBlock?.backRefs?.length) return []
+
+        // 2. 获取直接反链块ID
+        const backrefBlockIds = currentBlock.backRefs.map(backRef => backRef.from).filter(id => id != null)
+        if (backrefBlockIds.length === 0) return []
+        
+        // 3. 批量获取直接反链块
+        const backrefBlocks = await this.cachedApiCall("get-blocks", backrefBlockIds)
+        if (!backrefBlocks?.length) return []
+        
+        // 4. 收集所有直接反链块的反链块ID
+        const backrefBackrefBlockIds = new Set<DbId>()
+        
+        for (const backrefBlock of backrefBlocks) {
+          if (backrefBlock.backRefs?.length) {
+            backrefBlock.backRefs.forEach((backRef: any) => {
+              if (backRef.from) backrefBackrefBlockIds.add(backRef.from)
+            })
+          }
+        }
+        
+        if (backrefBackrefBlockIds.size === 0) return []
+        
+        // 5. 批量获取反链的反链块
+        const backrefBackrefBlocks = await this.cachedApiCall("get-blocks", Array.from(backrefBackrefBlockIds))
+        if (!backrefBackrefBlocks?.length) return []
+        
+        // 6. 筛选非别名块，排除自身块
+        return backrefBackrefBlocks.filter((block: any) => 
+          (!block.aliases || block.aliases.length === 0) && block.id !== blockId
+        )
+      },
+      "Failed to get backref-backref blocks:",
+      []
+    )
   }
 
   // 获取子块中引用的别名块（只识别内联引用）
@@ -6285,7 +6423,9 @@ const typeConfigs = [
       backrefAliasBlocks,
       backrefBlocks,
       recursiveBackrefBlocks,
-      recursiveBackrefAliasBlocks
+      recursiveBackrefAliasBlocks,
+      backrefBackrefAliasBlocks,
+      backrefBackrefBlocks
     ] = await Promise.all([
       this.apiService.getChildrenTags(rootBlockId),
       this.getContainedInBlocks(),
@@ -6298,7 +6438,9 @@ const typeConfigs = [
       this.backrefAliasQueryEnabled ? this.getBackrefAliasBlocks(rootBlockId) : Promise.resolve([]),
       this.getBackrefBlocks(rootBlockId),
       this.getRecursiveBackrefBlocks(rootBlockId),
-      this.getRecursiveBackrefAliasBlocks(rootBlockId)
+      this.getRecursiveBackrefAliasBlocks(rootBlockId),
+      this.getBackrefBackrefAliasBlocks(rootBlockId),
+      this.getBackrefBackrefBlocks(rootBlockId)
     ])
     
     const result: GatheredData = {
@@ -6314,7 +6456,9 @@ const typeConfigs = [
       backrefAliasBlocks,
       backrefBlocks,
       recursiveBackrefBlocks,
-      recursiveBackrefAliasBlocks
+      recursiveBackrefAliasBlocks,
+      backrefBackrefAliasBlocks,
+      backrefBackrefBlocks
     }
     
     // 缓存数据
@@ -6361,7 +6505,7 @@ const typeConfigs = [
    * 处理数据并转换为显示项目（优化版）
    */
   private async processDataToItems(data: GatheredData): Promise<ProcessedItemsResult> {
-    const { childrenTags, referencedResult, containedInBlockIds, referencingAliasBlocks, childReferencedAliasBlocks, childReferencedTagAliasBlocks, childReferencedInlineBlocks, pageDirectChildren, pageRecursiveChildren, backrefAliasBlocks, backrefBlocks, recursiveBackrefBlocks, recursiveBackrefAliasBlocks } = data
+    const { childrenTags, referencedResult, containedInBlockIds, referencingAliasBlocks, childReferencedAliasBlocks, childReferencedTagAliasBlocks, childReferencedInlineBlocks, pageDirectChildren, pageRecursiveChildren, backrefAliasBlocks, backrefBlocks, recursiveBackrefBlocks, recursiveBackrefAliasBlocks, backrefBackrefAliasBlocks, backrefBackrefBlocks } = data
     const { blocks: referencedBlocks, tagBlockIds, inlineRefIds, propertyRefIds } = referencedResult
 
     const promises = [] as Promise<PageDisplayItem[]>[]
@@ -6379,10 +6523,12 @@ const typeConfigs = [
     promises.push(backrefBlocks?.length ? this.processBackrefItems(backrefBlocks) : Promise.resolve([]))
     promises.push(recursiveBackrefBlocks?.length ? this.processRecursiveBackrefItems(recursiveBackrefBlocks) : Promise.resolve([]))
     promises.push(recursiveBackrefAliasBlocks?.length ? this.processRecursiveBackrefAliasItems(recursiveBackrefAliasBlocks) : Promise.resolve([]))
+    promises.push(backrefBackrefAliasBlocks?.length ? this.processBackrefBackrefAliasItems(backrefBackrefAliasBlocks) : Promise.resolve([]))
+    promises.push(backrefBackrefBlocks?.length ? this.processBackrefBackrefBlockItems(backrefBackrefBlocks) : Promise.resolve([]))
 
-    const [tagItems, referencedItems, containedInItems, referencingAliasItems, childReferencedAliasItems, childReferencedTagAliasItems, childReferencedInlineItems, pageDirectChildrenItems, pageRecursiveChildrenItems, backrefAliasItems, backrefItems, recursiveBackrefItems, recursiveBackrefAliasItems] = await Promise.all(promises)
+    const [tagItems, referencedItems, containedInItems, referencingAliasItems, childReferencedAliasItems, childReferencedTagAliasItems, childReferencedInlineItems, pageDirectChildrenItems, pageRecursiveChildrenItems, backrefAliasItems, backrefItems, recursiveBackrefItems, recursiveBackrefAliasItems, backrefBackrefAliasItems, backrefBackrefBlockItems] = await Promise.all(promises)
 
-    this.log(`PageDisplay: 数据处理完成 - tagItems: ${tagItems.length}, referencedItems: ${referencedItems.length}, containedInItems: ${containedInItems.length}, referencingAliasItems: ${referencingAliasItems.length}, childReferencedAliasItems: ${childReferencedAliasItems.length}, childReferencedTagAliasItems: ${childReferencedTagAliasItems.length}, childReferencedInlineItems: ${childReferencedInlineItems.length}, pageDirectChildrenItems: ${pageDirectChildrenItems.length}, pageRecursiveChildrenItems: ${pageRecursiveChildrenItems.length}, backrefAliasItems: ${backrefAliasItems.length}, backrefItems: ${backrefItems.length}, recursiveBackrefItems: ${recursiveBackrefItems.length}, recursiveBackrefAliasItems: ${recursiveBackrefAliasItems.length}`)
+    this.log(`PageDisplay: 数据处理完成 - tagItems: ${tagItems.length}, referencedItems: ${referencedItems.length}, containedInItems: ${containedInItems.length}, referencingAliasItems: ${referencingAliasItems.length}, childReferencedAliasItems: ${childReferencedAliasItems.length}, childReferencedTagAliasItems: ${childReferencedTagAliasItems.length}, childReferencedInlineItems: ${childReferencedInlineItems.length}, pageDirectChildrenItems: ${pageDirectChildrenItems.length}, pageRecursiveChildrenItems: ${pageRecursiveChildrenItems.length}, backrefAliasItems: ${backrefAliasItems.length}, backrefItems: ${backrefItems.length}, recursiveBackrefItems: ${recursiveBackrefItems.length}, recursiveBackrefAliasItems: ${recursiveBackrefAliasItems.length}, backrefBackrefAliasItems: ${backrefBackrefAliasItems.length}, backrefBackrefBlockItems: ${backrefBackrefBlockItems.length}`)
 
     // 将referencedItems按类型分开
     const referencedItemsByType = referencedItems.reduce((acc, item) => {
@@ -6409,13 +6555,15 @@ const typeConfigs = [
       'backref-alias-blocks': backrefAliasItems,
       'backref': backrefItems,
       'recursive-backref': recursiveBackrefItems,
-      'recursive-backref-alias': recursiveBackrefAliasItems
+      'recursive-backref-alias': recursiveBackrefAliasItems,
+      'backref-backref-alias': backrefBackrefAliasItems,
+      'backref-backref-block': backrefBackrefBlockItems
     }
 
     const groupedItems = this.buildGroupedItems(groupSource, tagBlockIds, containedInBlockIds)
     const uniqueItems: PageDisplayItem[] = []
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'page-direct-children', 'page-recursive-children', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'page-direct-children', 'page-recursive-children', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref', 'backref-backref-alias', 'backref-backref-block']
     for (const type of groupTypes) {
       uniqueItems.push(...groupedItems[type])
     }
@@ -6698,6 +6846,38 @@ const typeConfigs = [
     }
     
     return recursiveBackrefAliasItems
+  }
+
+  private async processBackrefBackrefAliasItems(backrefBackrefAliasBlocks: Block[]): Promise<PageDisplayItem[]> {
+    const backrefBackrefAliasItems: PageDisplayItem[] = []
+    
+    for (const block of backrefBackrefAliasBlocks) {
+      this.log("PageDisplay: processing backref-backref alias block", block)
+      
+      const displayText = (block.aliases && block.aliases[0]) || block.text || `反链的反链别名块 ${block.id}`
+      const enhancedItem = await this.createPageDisplayItem(block, 'backref-backref-alias', displayText)
+      backrefBackrefAliasItems.push(enhancedItem)
+      
+      this.log("PageDisplay: added backref-backref alias item", { id: block.id, text: displayText, aliases: block.aliases })
+    }
+    
+    return backrefBackrefAliasItems
+  }
+
+  private async processBackrefBackrefBlockItems(backrefBackrefBlocks: Block[]): Promise<PageDisplayItem[]> {
+    const backrefBackrefBlockItems: PageDisplayItem[] = []
+    
+    for (const block of backrefBackrefBlocks) {
+      this.log("PageDisplay: processing backref-backref block", block)
+      
+      const displayText = block.text || `反链的反链块 ${block.id}`
+      const enhancedItem = await this.createPageDisplayItem(block, 'backref-backref-block', displayText)
+      backrefBackrefBlockItems.push(enhancedItem)
+      
+      this.log("PageDisplay: added backref-backref block item", { id: block.id, text: displayText })
+    }
+    
+    return backrefBackrefBlockItems
   }
 
   /**
