@@ -774,6 +774,8 @@ export class PageDisplay {
   private multiLine: boolean = false
   /** 控制是否多列显示项目 */
   private multiColumn: boolean = false
+  /** 面包屑显示模式：hidden=不显示，single-line=单行显示，multi-line=多行显示 */
+  private breadcrumbMode: 'hidden' | 'single-line' | 'multi-line' = 'single-line'
   /** 显示模式 */
   private displayMode: DisplayMode = 'flat'
   /** 可用显示模式列表 */
@@ -6980,6 +6982,23 @@ const typeConfigs = [
     this.applyStyles(refreshIcon, 'page-display-refresh-icon')
     refreshIcon.title = '刷新页面空间'
     
+    // 创建面包屑切换按钮
+    const breadcrumbToggleIcon = document.createElement('div')
+    const getBreadcrumbIcon = () => {
+      if (this.breadcrumbMode === 'hidden') return '<i class="ti ti-route-off"></i>'
+      if (this.breadcrumbMode === 'multi-line') return '<i class="ti ti-route-2"></i>'
+      return '<i class="ti ti-route"></i>'
+    }
+    const getBreadcrumbTitle = () => {
+      if (this.breadcrumbMode === 'hidden') return '面包屑: 隐藏'
+      if (this.breadcrumbMode === 'multi-line') return '面包屑: 多行'
+      return '面包屑: 单行'
+    }
+    breadcrumbToggleIcon.innerHTML = getBreadcrumbIcon()
+    breadcrumbToggleIcon.className = 'page-display-breadcrumb-toggle-icon'
+    this.applyStyles(breadcrumbToggleIcon, 'page-display-breadcrumb-toggle-icon')
+    breadcrumbToggleIcon.title = getBreadcrumbTitle()
+    
     // 创建搜索图标
     const searchIcon = document.createElement('div')
     searchIcon.innerHTML = '<i class="ti ti-search"></i>'
@@ -7032,6 +7051,7 @@ const typeConfigs = [
     
     // 将所有按钮添加到容器中
     functionButtonsContainer.appendChild(refreshIcon)
+    functionButtonsContainer.appendChild(breadcrumbToggleIcon)
     functionButtonsContainer.appendChild(searchIcon)
     functionButtonsContainer.appendChild(filterIcon)
     functionButtonsContainer.appendChild(dateFilterIcon)
@@ -7100,6 +7120,34 @@ const typeConfigs = [
       } catch (error) {
         this.logError('刷新页面空间失败:', error)
       }
+    })
+    
+    // 面包屑切换按钮点击事件
+    breadcrumbToggleIcon.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // 循环切换面包屑显示模式
+      if (this.breadcrumbMode === 'single-line') {
+        this.breadcrumbMode = 'multi-line'
+      } else if (this.breadcrumbMode === 'multi-line') {
+        this.breadcrumbMode = 'hidden'
+      } else {
+        this.breadcrumbMode = 'single-line'
+      }
+      
+      // 更新按钮图标和提示
+      breadcrumbToggleIcon.innerHTML = getBreadcrumbIcon()
+      breadcrumbToggleIcon.title = getBreadcrumbTitle()
+      
+      // 添加点击反馈
+      breadcrumbToggleIcon.style.transform = 'scale(0.95)'
+      setTimeout(() => {
+        breadcrumbToggleIcon.style.transform = 'scale(1)'
+      }, 100)
+      
+      // 强制刷新显示
+      this.forceUpdate()
     })
     
     // 搜索图标点击事件
@@ -8637,6 +8685,11 @@ const typeConfigs = [
    * @returns 面包屑容器元素或null
    */
   private createBreadcrumbContainer(item: PageDisplayItem): HTMLElement | null {
+    // 如果面包屑模式是隐藏，直接返回 null
+    if (this.breadcrumbMode === 'hidden') {
+      return null
+    }
+    
     // 创建面包屑容器
     const breadcrumbContainer = document.createElement('div')
     breadcrumbContainer.className = 'page-display-breadcrumb-container'
@@ -8646,6 +8699,15 @@ const typeConfigs = [
     const breadcrumbLevel = document.createElement('div')
     breadcrumbLevel.className = 'page-display-breadcrumb-level'
     this.applyStyles(breadcrumbLevel, 'page-display-breadcrumb-level')
+    
+    // 根据模式设置样式
+    if (this.breadcrumbMode === 'multi-line') {
+      breadcrumbLevel.style.whiteSpace = 'normal'
+      breadcrumbLevel.style.overflow = 'visible'
+    } else {
+      breadcrumbLevel.style.whiteSpace = 'nowrap'
+      breadcrumbLevel.style.overflow = 'hidden'
+    }
 
     // 先尝试同步获取面包屑文本（作为快速显示）
     const breadcrumbText = this.getBreadcrumbTextForItem(item)
@@ -8719,8 +8781,20 @@ const typeConfigs = [
       // 创建层级元素
       const levelElement = document.createElement('span')
       levelElement.className = 'page-display-breadcrumb-level-item'
-      levelElement.textContent = item.text
+      
+      // 限制面包屑项的最大长度
+      const maxLength = 20
+      const displayText = item.text.length > maxLength 
+        ? item.text.substring(0, maxLength) + '...' 
+        : item.text
+      
+      levelElement.textContent = displayText
       levelElement.setAttribute('data-block-id', item.id.toString())
+      
+      // 如果文本被截断，添加完整文本的 title 提示
+      if (item.text.length > maxLength) {
+        levelElement.title = item.text
+      }
       
       // 添加点击事件
       levelElement.addEventListener('click', (e) => {

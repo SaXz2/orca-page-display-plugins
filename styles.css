@@ -38,6 +38,8 @@
 
 /* 功能按钮基础样式 */
 .page-display-search-icon,
+.page-display-refresh-icon,
+.page-display-breadcrumb-toggle-icon,
 .page-display-filter-icon,
 .page-display-date-filter-icon,
 .page-display-sort-icon,
@@ -65,6 +67,8 @@
 
 /* 功能按钮悬浮效果 */
 .page-display-search-icon:hover,
+.page-display-refresh-icon:hover,
+.page-display-breadcrumb-toggle-icon:hover,
 .page-display-filter-icon:hover,
 .page-display-date-filter-icon:hover,
 .page-display-sort-icon:hover,
