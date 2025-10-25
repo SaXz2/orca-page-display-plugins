@@ -8368,10 +8368,33 @@ const typeConfigs = [
       list.style.opacity = '0'
       list.style.maxHeight = '0'
       arrow.innerHTML = '<i class="ti ti-chevron-right"></i>'
+      
+      // 隐藏功能按钮容器
+      functionButtonsContainer.style.display = 'none'
+      functionButtonsContainer.style.opacity = '0'
+      
       if (searchContainer.style.display !== 'none') {
         searchContainer.style.display = 'none'
         searchContainer.style.opacity = '0'
         searchContainer.style.maxHeight = '0'
+      }
+      
+      // 隐藏类型过滤面板（如果存在）
+      const typeFilterPanel = container.querySelector('.page-display-type-filter-panel') as HTMLElement
+      if (typeFilterPanel) {
+        typeFilterPanel.style.display = 'none'
+        typeFilterPanel.style.opacity = '0'
+        typeFilterPanel.style.visibility = 'hidden'
+        typeFilterPanel.style.transform = 'translateY(-10px)'
+      }
+      
+      // 隐藏日期过滤面板（如果存在）
+      const dateFilterPanel = container.querySelector('.page-display-date-filter-panel') as HTMLElement
+      if (dateFilterPanel) {
+        dateFilterPanel.style.display = 'none'
+        dateFilterPanel.style.opacity = '0'
+        dateFilterPanel.style.visibility = 'hidden'
+        dateFilterPanel.style.transform = 'translateY(-10px)'
       }
     }
 
