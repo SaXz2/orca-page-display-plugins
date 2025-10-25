@@ -8086,6 +8086,15 @@ const typeConfigs = [
       this.savePanelState(targetPanelId, currentState)
     })
     
+    // 添加ESC键事件监听 - 退出搜索激活状态
+    searchInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        // 让搜索框失去焦点，退出激活状态
+        searchInput.blur()
+        event.preventDefault()
+      }
+    })
+    
     searchContainer.appendChild(searchInput)
     container.appendChild(searchContainer)
 
