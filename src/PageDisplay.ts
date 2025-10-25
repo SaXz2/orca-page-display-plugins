@@ -7154,6 +7154,9 @@ const typeConfigs = [
       this.toggleTypeFilters()
       
       if (this.showTypeFilters) {
+        // 隐藏其他面板
+        hideOtherPanels('typeFilter')
+        
         // 显示面板 - 使用透明度过渡
         typeFilterPanel.style.display = 'block'
         // 强制重排以确保初始状态正确
@@ -7187,6 +7190,9 @@ const typeConfigs = [
       this.toggleDateFilters()
       
       if (this.showDateFilters) {
+        // 隐藏其他面板
+        hideOtherPanels('dateFilter')
+        
         // 显示面板 - 使用透明度过渡
         dateFilterPanel.style.display = 'block'
         // 强制重排以确保初始状态正确
@@ -7523,11 +7529,60 @@ const typeConfigs = [
       toggleSearch()
     })
     
+    // 隐藏其他功能面板（互斥显示）
+    const hideOtherPanels = (currentPanel: 'search' | 'typeFilter' | 'dateFilter') => {
+      if (currentPanel !== 'search') {
+        // 隐藏搜索框
+        if (isSearchVisible) {
+          searchContainer.style.opacity = '0'
+          searchContainer.style.maxHeight = '0'
+          searchIcon.style.background = 'var(--page-display-search-bg)'
+          setTimeout(() => {
+            if (!isSearchVisible) {
+              searchContainer.style.display = 'none'
+            }
+          }, 200)
+          isSearchVisible = false
+          // 保存搜索框状态
+          const currentState = this.getPanelState(targetPanelId)
+          currentState.isSearchVisible = false
+          this.savePanelState(targetPanelId, currentState)
+        }
+      }
+      
+      if (currentPanel !== 'typeFilter') {
+        // 隐藏类型过滤面板
+        if (this.showTypeFilters) {
+          typeFilterPanel.style.display = 'none'
+          typeFilterPanel.style.opacity = '0'
+          typeFilterPanel.style.visibility = 'hidden'
+          typeFilterPanel.style.transform = 'translateY(-10px)'
+          this.showTypeFilters = false
+          this.saveSettings()
+        }
+      }
+      
+      if (currentPanel !== 'dateFilter') {
+        // 隐藏日期过滤面板
+        if (this.showDateFilters) {
+          dateFilterPanel.style.display = 'none'
+          dateFilterPanel.style.opacity = '0'
+          dateFilterPanel.style.visibility = 'hidden'
+          dateFilterPanel.style.transform = 'translateY(-10px)'
+          this.showDateFilters = false
+          this.saveSettings()
+        }
+      }
+    }
+
     // 切换搜索框显示
     const toggleSearch = () => {
       isSearchVisible = !isSearchVisible
       
       if (isSearchVisible) {
+        // 隐藏其他面板
+        hideOtherPanels('search')
+        
         // 显示搜索框
         searchContainer.style.display = 'block'
         // 强制重排以确保初始状态正确
