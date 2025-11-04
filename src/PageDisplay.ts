@@ -1,4 +1,4 @@
-import type { Block, DbId, BlockRef } from "./orca.d.ts"
+import type { Block, DbId, BlockRef, QueryDescription2 } from "./orca.d.ts"
 import pinyinMatch from 'pinyin-match'
 
 /**
@@ -103,14 +103,14 @@ class ErrorHandler {
   /**
    * 处理显示错误
    */
-  handleDisplayError(error: any, retryCount: number, maxRetries: number, onRetry: () => void) {
+  handleDisplayError(error: any, retryCount: number, maxRetries: number, onRetry: () => Promise<void>) {
     this.logger.warn(`Display error (attempt ${retryCount}/${maxRetries}):`, error)
     
     if (retryCount < maxRetries) {
       // 延迟重试
-      setTimeout(() => {
+      setTimeout(async () => {
         this.logger.debug("Retrying display creation...")
-        onRetry()
+        await onRetry()
       }, this.retryDelay * retryCount)
     } else {
       this.logger.error("Max retries reached, giving up")
@@ -317,6 +317,67 @@ class ApiService {
    */
   setCacheTimeout(timeout: number) {
     this.cacheTimeout = timeout
+  }
+
+  /**
+   * 搜索候选引用块
+   * 使用查询API搜索所有普通块（排除别名块），精确匹配名称和别名
+   * @param searchTerm 搜索词
+   * @returns 匹配的块列表
+   */
+  async searchCandidateReferences(searchTerm: string): Promise<Block[]> {
+    try {
+      if (!searchTerm.trim()) {
+        return []
+      }
+
+      // 构建查询条件：搜索包含指定文本的块，排除别名块
+      const query: QueryDescription2 = {
+        q: {
+          kind: 100, // QueryKindSelfAnd
+          conditions: [
+            {
+              kind: 8, // QueryKindText - 文本搜索
+              text: searchTerm,
+              raw: true // 精确匹配
+            },
+            {
+              kind: 9, // QueryKindBlock - 块属性查询
+              hasTags: false // 排除有标签的块（别名块通常有标签）
+            }
+          ]
+        },
+        pageSize: 50, // 限制结果数量
+        sort: [['_text', 'ASC']] // 按文本排序
+      }
+
+      const result = await this.call("query", query)
+      
+      if (!result || !Array.isArray(result)) {
+        return []
+      }
+
+      // 过滤结果：只保留普通块（没有别名的块）
+      const candidateBlocks = result.filter((block: any) => {
+        // 排除别名块
+        if (block.aliases && block.aliases.length > 0) {
+          return false
+        }
+        
+        // 检查文本或别名是否精确匹配搜索词
+        const textMatch = block.text && block.text.toLowerCase().includes(searchTerm.toLowerCase())
+        const aliasMatch = block.aliases && block.aliases.some((alias: string) => 
+          alias.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+        
+        return textMatch || aliasMatch
+      })
+
+      return candidateBlocks
+    } catch (error) {
+      this.logger.error("Failed to search candidate references:", error)
+      return []
+    }
   }
 }
 
@@ -596,7 +657,7 @@ class StyleManager {
 /**
  * 页面显示项目类型
  */
-type PageDisplayItemType = 'tag' | 'referenced-tag' | 'property-ref-alias' | 'property-ref-block' | 'contained-in' | 'inline-ref' | 'referencing-alias' | 'child-referenced-alias' | 'child-referenced-tag-alias' | 'child-referenced-inline' | 'backref-alias-blocks' | 'backref' | 'recursive-backref' | 'recursive-backref-alias' | 'backref-backref-alias' | 'backref-backref-block' | 'page-direct-children' | 'page-recursive-children'
+type PageDisplayItemType = 'tag' | 'referenced-tag' | 'property-ref-alias' | 'property-ref-block' | 'contained-in' | 'inline-ref' | 'referencing-alias' | 'child-referenced-alias' | 'child-referenced-tag-alias' | 'child-referenced-inline' | 'backref-alias-blocks' | 'backref' | 'recursive-backref' | 'recursive-backref-alias' | 'backref-backref-alias' | 'backref-backref-block' | 'page-direct-children' | 'page-recursive-children' | 'candidate-reference'
 
 type DisplayMode = 'flat' | 'grouped'
 type DisplayGroupsMap = Record<PageDisplayItemType, PageDisplayItem[]>
@@ -1043,14 +1104,14 @@ export class PageDisplay {
    * 切换图标显示状态
    * 控制是否在页面空间显示项目中显示图标
    */
-  public toggleIcons() {
+  public async toggleIcons(): Promise<void> {
     this.showIcons = !this.showIcons
     
     // 保存设置到本地存储
     this.saveSettings()
     
     // 强制更新显示以应用新的图标设置
-    this.forceUpdate()
+    await this.forceUpdate()
   }
 
   /**
@@ -1065,13 +1126,13 @@ export class PageDisplay {
    * 设置Journal页面支持状态
    * @param enabled 是否启用Journal页面支持
    */
-  public setJournalPageSupport(enabled: boolean): void {
+  public async setJournalPageSupport(enabled: boolean): Promise<void> {
     console.log("PageDisplay: Setting journalPageSupport to:", enabled)
     this.journalPageSupport = enabled
     this.saveSettings()
     
     // 无论启用还是禁用，都强制更新显示以应用新设置
-    this.forceUpdate()
+    await this.forceUpdate()
   }
 
   /**
@@ -1086,54 +1147,54 @@ export class PageDisplay {
    * 设置图标显示状态
    * @param enabled 是否显示图标
    */
-  public setIconsEnabled(enabled: boolean): void {
+  public async setIconsEnabled(enabled: boolean): Promise<void> {
     this.showIcons = enabled
     this.saveSettings()
-    this.forceUpdate()
+    await this.forceUpdate()
   }
 
   /**
    * 设置多行显示状态
    * @param enabled 是否多行显示
    */
-  public setMultiLine(enabled: boolean): void {
+  public async setMultiLine(enabled: boolean): Promise<void> {
     this.multiLine = enabled
     this.saveSettings()
-    this.forceUpdate()
+    await this.forceUpdate()
   }
 
   /**
    * 设置多列显示状态
    * @param enabled 是否多列显示
    */
-  public setMultiColumn(enabled: boolean): void {
+  public async setMultiColumn(enabled: boolean): Promise<void> {
     this.multiColumn = enabled
     this.saveSettings()
-    this.forceUpdate()
+    await this.forceUpdate()
   }
 
   /**
    * 设置显示模式
    * @param mode 显示模式
    */
-  public setDisplayMode(mode: 'flat' | 'grouped'): void {
+  public async setDisplayMode(mode: 'flat' | 'grouped'): Promise<void> {
     this.displayMode = mode
     this.saveSettings()
-    this.forceUpdate()
+    await this.forceUpdate()
   }
 
   /**
    * 切换多行显示状态
    * 控制项目文本是否以多行形式显示
    */
-  public toggleMultiLine() {
+  public async toggleMultiLine(): Promise<void> {
     this.multiLine = !this.multiLine
     
     // 保存设置到本地存储
     this.saveSettings()
     
     // 强制更新显示以应用新的多行设置
-    this.forceUpdate()
+    await this.forceUpdate()
   }
 
   /**
@@ -1148,14 +1209,14 @@ export class PageDisplay {
    * 切换多列显示状态
    * 控制项目是否以多列形式显示
    */
-  public toggleMultiColumn() {
+  public async toggleMultiColumn(): Promise<void> {
     this.multiColumn = !this.multiColumn
     
     // 保存设置到本地存储
     this.saveSettings()
     
     // 强制更新显示以应用新的多列设置
-    this.forceUpdate()
+    await this.forceUpdate()
   }
   
 
@@ -1405,18 +1466,20 @@ export class PageDisplay {
   private initializeTypeFilters(): void {
     const allTypes: PageDisplayItemType[] = [
       'tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'page-direct-children', 'page-recursive-children', 'referencing-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline',
-      'backref-alias-blocks', 'backref', 'recursive-backref', 'recursive-backref-alias', 'backref-backref-alias', 'backref-backref-block'
+      'backref-alias-blocks', 'backref', 'recursive-backref', 'recursive-backref-alias', 'backref-backref-alias', 'backref-backref-block', 'candidate-reference'
     ]
     
     allTypes.forEach(type => {
-      this.typeFilters.set(type, true) // 默认都显示
+      // 候选引用默认隐藏，只在搜索时显示
+      const isVisible = type === 'candidate-reference' ? false : true
+      this.typeFilters.set(type, isVisible)
     })
   }
 
   /**
    * 切换类型过滤面板显示状态
    */
-  public toggleTypeFilters(): void {
+  public async toggleTypeFilters(): Promise<void> {
     this.showTypeFilters = !this.showTypeFilters
     this.saveSettings()
     
@@ -1424,7 +1487,7 @@ export class PageDisplay {
     const panelId = this.getCurrentPanelId()
     const container = this.containers.get(panelId)
     if (container) {
-      this.updateDisplay()
+      await this.updateDisplay()
     }
   }
 
@@ -1492,7 +1555,7 @@ export class PageDisplay {
   /**
    * 切换日期过滤面板显示状态
    */
-  public toggleDateFilters(): void {
+  public async toggleDateFilters(): Promise<void> {
     this.showDateFilters = !this.showDateFilters
     this.saveSettings()
     
@@ -1500,7 +1563,7 @@ export class PageDisplay {
     const panelId = this.getCurrentPanelId()
     const container = this.containers.get(panelId)
     if (container) {
-      this.updateDisplay()
+      await this.updateDisplay()
     }
   }
 
@@ -1732,7 +1795,7 @@ export class PageDisplay {
     confirmBtn.addEventListener('mouseleave', () => {
       confirmBtn.style.background = 'var(--orca-color-primary-5)'
     })
-    confirmBtn.addEventListener('click', () => {
+    confirmBtn.addEventListener('click', async () => {
       // 应用所有复选框的状态
       optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
         const input = checkbox as HTMLInputElement
@@ -1741,7 +1804,7 @@ export class PageDisplay {
       })
       
       // 强制更新显示
-      this.forceUpdate()
+      await this.forceUpdate()
       
       // 隐藏面板 - 立即设置display为none，避免空白区域
       this.toggleTypeFilters()
@@ -1832,7 +1895,8 @@ const typeConfigs = [
   { type: 'recursive-backref', label: '递归反链块', icon: 'ti-arrow-down-right' },
   { type: 'recursive-backref-alias', label: '递归反链别名', icon: 'ti-arrow-right' },
   { type: 'backref-backref-alias', label: '反链的反链别名', icon: 'ti-arrow-right-up' },
-  { type: 'backref-backref-block', label: '反链的反链块', icon: 'ti-arrow-down-left' }
+  { type: 'backref-backref-block', label: '反链的反链块', icon: 'ti-arrow-down-left' },
+  { type: 'candidate-reference', label: '候选引用', icon: 'ti-search' }
 ]
     
     // 创建每个类型的复选框 - 更紧凑的布局
@@ -2039,14 +2103,14 @@ const typeConfigs = [
       clearBtn.style.background = 'var(--orca-color-bg-2)'
       clearBtn.style.borderColor = 'var(--orca-color-border)'
     })
-    clearBtn.addEventListener('click', () => {
+    clearBtn.addEventListener('click', async () => {
       // 清除所有日期过滤设置
       this.dateFilterConfig = {
         enabled: false,
         dateField: 'created'
       }
       this.saveSettings()
-      this.forceUpdate()
+      await this.forceUpdate()
       this.toggleDateFilters()
     })
     
@@ -2076,9 +2140,9 @@ const typeConfigs = [
       confirmBtn.style.background = 'var(--orca-color-success-5)'
       confirmBtn.style.borderColor = 'var(--orca-color-success-5)'
     })
-    confirmBtn.addEventListener('click', () => {
+    confirmBtn.addEventListener('click', async () => {
       // 应用日期过滤设置
-      this.forceUpdate()
+      await this.forceUpdate()
       this.toggleDateFilters()
     })
     
@@ -3327,7 +3391,8 @@ const typeConfigs = [
       'recursive-backref': [],
       'recursive-backref-alias': [],
       'backref-backref-alias': [],
-      'backref-backref-block': []
+      'backref-backref-block': [],
+      'candidate-reference': []
     } as DisplayGroupsMap
   }
 
@@ -3340,7 +3405,7 @@ const typeConfigs = [
     const result = this.createEmptyGroups()
     const seen = new Set<string>()
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'page-direct-children', 'page-recursive-children', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref', 'backref-backref-alias', 'backref-backref-block']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'page-direct-children', 'page-recursive-children', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref', 'backref-backref-alias', 'backref-backref-block', 'candidate-reference']
     for (const type of groupTypes) {
       const groupItems = source[type] ?? []
       for (const item of groupItems) {
@@ -3447,15 +3512,15 @@ const typeConfigs = [
     }
   }
 
-  public cycleDisplayMode(): DisplayMode {
+  public async cycleDisplayMode(): Promise<DisplayMode> {
     const currentIndex = this.DISPLAY_MODES.indexOf(this.displayMode)
     const nextIndex = (currentIndex + 1) % this.DISPLAY_MODES.length
     const nextMode = this.DISPLAY_MODES[nextIndex]
-    this.applyDisplayMode(nextMode)
+    await this.applyDisplayMode(nextMode)
     return nextMode
   }
 
-  private applyDisplayMode(mode: DisplayMode) {
+  private async applyDisplayMode(mode: DisplayMode): Promise<void> {
     if (this.displayMode === mode) {
       return
     }
@@ -3464,7 +3529,7 @@ const typeConfigs = [
     void this.saveSettings()
 
     if (this.isInitialized) {
-      this.forceUpdate()
+      await this.forceUpdate()
     }
   }
 
@@ -3601,12 +3666,12 @@ const typeConfigs = [
       clearInterval(this.pageSwitchCheckInterval)
     }
 
-    this.pageSwitchCheckInterval = window.setInterval(() => {
+    this.pageSwitchCheckInterval = window.setInterval(async () => {
       const pageSwitchElement = document.querySelector("#main > div > div.orca-panel.active > div:nth-child(3)")
       if (pageSwitchElement && this.shouldDisplay()) {
         const currentRootBlockId = this.getCurrentRootBlockId()
         if (currentRootBlockId !== this.lastRootBlockId) {
-          this.updateDisplay()
+          await this.updateDisplay()
         }
       }
     }, 500)
@@ -5010,6 +5075,33 @@ const typeConfigs = [
     }
   }
 
+  /**
+   * 获取候选引用块
+   * 根据搜索词搜索所有普通块（排除别名块），用于候选引用功能
+   * @param searchTerm 搜索词
+   * @returns 候选引用块列表
+   */
+  private async getCandidateReferenceBlocks(searchTerm: string): Promise<Block[]> {
+    try {
+      this.log(`PageDisplay: 开始搜索候选引用块，搜索词: ${searchTerm}`)
+      
+      if (!searchTerm.trim()) {
+        this.log("PageDisplay: 搜索词为空，返回空结果")
+        return []
+      }
+
+      // 使用API服务搜索候选引用
+      const candidateBlocks = await this.apiService.searchCandidateReferences(searchTerm)
+      
+      this.log(`PageDisplay: 找到 ${candidateBlocks.length} 个候选引用块`)
+      
+      return candidateBlocks
+    } catch (error) {
+      this.logError("Failed to get candidate reference blocks:", error)
+      return []
+    }
+  }
+
   // 处理子块引用的内联块
   private async processChildReferencedInlineItems(childReferencedInlineBlocks: Block[]): Promise<PageDisplayItem[]> {
     const childReferencedInlineItems: PageDisplayItem[] = []
@@ -5026,6 +5118,38 @@ const typeConfigs = [
       }
     }
     return childReferencedInlineItems
+  }
+
+  /**
+   * 处理候选引用项目
+   * 将候选引用块转换为PageDisplayItem
+   * @param candidateBlocks 候选引用块列表
+   * @returns 候选引用项目列表
+   */
+  private async processCandidateReferenceItems(candidateBlocks: Block[]): Promise<PageDisplayItem[]> {
+    const candidateReferenceItems: PageDisplayItem[] = []
+    
+    for (const block of candidateBlocks) {
+      this.log("PageDisplay: processing candidate reference block", block)
+      
+      // 检查是否有名称或文本
+      const hasName = block.text || (block.aliases && block.aliases.length > 0)
+      if (hasName) {
+        const displayText = block.text || (block.aliases && block.aliases[0]) || `候选引用 ${block.id}`
+        const enhancedItem = await this.createPageDisplayItem(block, 'candidate-reference', displayText)
+        candidateReferenceItems.push(enhancedItem)
+        
+        this.log("PageDisplay: added candidate reference item", { 
+          id: block.id, 
+          text: displayText, 
+          aliases: block.aliases 
+        })
+      } else {
+        this.log("PageDisplay: skipping candidate reference block (no name/text)", block)
+      }
+    }
+    
+    return candidateReferenceItems
   }
 
   /**
@@ -6185,7 +6309,7 @@ const typeConfigs = [
    * 更新显示（带防抖）
    * 使用100ms防抖避免频繁更新
    */
-  public updateDisplay() {
+  public async updateDisplay() {
     this.log("PageDisplay: updateDisplay called")
 
     if (this.updateTimeout) {
@@ -6223,9 +6347,9 @@ const typeConfigs = [
    * 强制更新显示（跳过防抖）
    * 立即执行更新，用于需要立即响应的场景
    */
-  public forceUpdate() {
+  public async forceUpdate() {
     this.retryCount = 0
-    this.performUpdate(true) // 强制更新，跳过shouldSkipUpdate检查
+    await this.performUpdate(true) // 强制更新，跳过shouldSkipUpdate检查
   }
 
   /**
@@ -6557,13 +6681,14 @@ const typeConfigs = [
       'recursive-backref': recursiveBackrefItems,
       'recursive-backref-alias': recursiveBackrefAliasItems,
       'backref-backref-alias': backrefBackrefAliasItems,
-      'backref-backref-block': backrefBackrefBlockItems
+      'backref-backref-block': backrefBackrefBlockItems,
+      'candidate-reference': [] // 候选引用项目（仅在搜索时动态添加）
     }
 
     const groupedItems = this.buildGroupedItems(groupSource, tagBlockIds, containedInBlockIds)
     const uniqueItems: PageDisplayItem[] = []
 
-    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'page-direct-children', 'page-recursive-children', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref', 'backref-backref-alias', 'backref-backref-block']
+    const groupTypes: PageDisplayItemType[] = ['tag', 'referenced-tag', 'property-ref-alias', 'property-ref-block', 'contained-in', 'inline-ref', 'page-direct-children', 'page-recursive-children', 'referencing-alias', 'recursive-backref-alias', 'child-referenced-alias', 'child-referenced-tag-alias', 'child-referenced-inline', 'backref-alias-blocks', 'backref', 'recursive-backref', 'backref-backref-alias', 'backref-backref-block', 'candidate-reference']
     for (const type of groupTypes) {
       uniqueItems.push(...groupedItems[type])
     }
@@ -6918,10 +7043,10 @@ const typeConfigs = [
   }
   
   // 处理显示错误（委托给错误处理器）
-  private handleDisplayError(error: any) {
+  private async handleDisplayError(error: any): Promise<void> {
     this.retryCount++
-    this.errorHandler.handleDisplayError(error, this.retryCount, this.maxRetries, () => {
-      this.updateDisplay()
+    this.errorHandler.handleDisplayError(error, this.retryCount, this.maxRetries, async () => {
+      await this.updateDisplay()
     })
   }
 
@@ -7347,7 +7472,7 @@ const typeConfigs = [
     })
     
     // 面包屑切换按钮点击事件
-    breadcrumbToggleIcon.addEventListener('click', (e) => {
+    breadcrumbToggleIcon.addEventListener('click', async (e) => {
       e.preventDefault()
       e.stopPropagation()
       
@@ -7371,7 +7496,7 @@ const typeConfigs = [
       }, 100)
       
       // 强制刷新显示
-      this.forceUpdate()
+      await this.forceUpdate()
     })
     
     // 搜索图标点击事件
@@ -7550,7 +7675,7 @@ const typeConfigs = [
     }
     
     // 图标显示切换按钮事件
-    iconsToggleIcon.addEventListener('click', (e) => {
+    iconsToggleIcon.addEventListener('click', async (e) => {
       e.preventDefault()
       e.stopPropagation()
       
@@ -7560,7 +7685,7 @@ const typeConfigs = [
         iconsToggleIcon.style.transform = 'scale(1)'
       }, 100)
       
-      this.toggleIcons()
+      await this.toggleIcons()
       iconsToggleIcon.title = this.showIcons ? '隐藏图标' : '显示图标'
       // 使用更平滑的图标切换，避免innerHTML重新设置
       const icon = iconsToggleIcon.querySelector('i')
@@ -7570,7 +7695,7 @@ const typeConfigs = [
     })
     
     // 多行显示切换按钮事件
-    multiLineToggleIcon.addEventListener('click', (e) => {
+    multiLineToggleIcon.addEventListener('click', async (e) => {
       e.preventDefault()
       e.stopPropagation()
       
@@ -7580,7 +7705,7 @@ const typeConfigs = [
         multiLineToggleIcon.style.transform = 'scale(1)'
       }, 100)
       
-      this.toggleMultiLine()
+      await this.toggleMultiLine()
       multiLineToggleIcon.title = this.multiLine ? '单行显示' : '多行显示'
       // 使用更平滑的图标切换，避免innerHTML重新设置
       const icon = multiLineToggleIcon.querySelector('i')
@@ -7590,7 +7715,7 @@ const typeConfigs = [
     })
     
     // 多列显示切换按钮事件
-    multiColumnToggleIcon.addEventListener('click', (e) => {
+    multiColumnToggleIcon.addEventListener('click', async (e) => {
       e.preventDefault()
       e.stopPropagation()
       
@@ -7600,7 +7725,7 @@ const typeConfigs = [
         multiColumnToggleIcon.style.transform = 'scale(1)'
       }, 100)
       
-      this.toggleMultiColumn()
+      await this.toggleMultiColumn()
       multiColumnToggleIcon.title = this.multiColumn ? '单列显示' : '多列显示'
       // 使用更平滑的图标切换，避免innerHTML重新设置
       const icon = multiColumnToggleIcon.querySelector('i')
@@ -7924,9 +8049,24 @@ const typeConfigs = [
     }
     
     // 更新显示的函数
-    const updateDisplay = () => {
+    const updateDisplay = async () => {
       const searchTerm = searchInput.value
       let filteredItems = filterItems(searchTerm)
+      
+      // 如果有搜索词，添加候选引用结果
+      if (searchTerm.trim()) {
+        try {
+          this.log(`PageDisplay: 搜索词存在，开始获取候选引用: ${searchTerm}`)
+          const candidateBlocks = await this.getCandidateReferenceBlocks(searchTerm)
+          const candidateItems = await this.processCandidateReferenceItems(candidateBlocks)
+          
+          // 将候选引用项目添加到过滤结果中
+          filteredItems = [...filteredItems, ...candidateItems]
+          this.log(`PageDisplay: 添加了 ${candidateItems.length} 个候选引用项目`)
+        } catch (error) {
+          this.logError("Failed to get candidate references:", error)
+        }
+      }
       
       // 重置懒加载批次
       this.currentBatch = 0
@@ -8697,13 +8837,13 @@ const typeConfigs = [
       clearInterval(this.periodicCheckInterval)
     }
     
-    this.periodicCheckInterval = window.setInterval(() => {
-      this.checkDisplayHealth()
+    this.periodicCheckInterval = window.setInterval(async () => {
+      await this.checkDisplayHealth()
     }, 30000) // 每30秒检查一次
   }
   
   // 检查显示健康状态
-  private checkDisplayHealth() {
+  private async checkDisplayHealth(): Promise<void> {
     if (!this.isInitialized) return
     
     const shouldDisplay = this.shouldDisplay()
@@ -8712,7 +8852,7 @@ const typeConfigs = [
     if (shouldDisplay && !isDisplaying) {
       this.log("PageDisplay: Health check detected missing display, attempting recovery")
       this.retryCount = 0 // 重置重试计数
-      this.updateDisplay()
+      await this.updateDisplay()
     }
   }
   
@@ -9050,9 +9190,9 @@ const typeConfigs = [
       })
 
       if (shouldUpdate) {
-        setTimeout(() => {
+        setTimeout(async () => {
           this.log('DOM变化触发显示更新')
-          this.updateDisplay()
+          await this.updateDisplay()
         }, 100)
       }
     })
