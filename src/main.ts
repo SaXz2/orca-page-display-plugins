@@ -81,61 +81,13 @@ export async function load(_name: string) {
   console.log(`${pluginName} loaded.`);
 
 
-  // 添加类型过滤面板切换命令
-  orca.commands.registerCommand(`${pluginName}.toggleTypeFilters`, () => {
-    if (pageDisplay) {
-      pageDisplay.toggleTypeFilters();
-      const status = pageDisplay.getTypeFiltersVisible() ? "显示" : "隐藏";
-      orca.notify("info", `类型过滤面板已${status}`);
-    }
-  }, "切换类型过滤面板");
+  // 移除类型过滤相关的全局命令
+// 不再需要切换类型过滤面板、全选所有类型、取消选择所有类型的命令
+// 所有类型过滤功能都通过界面中的按钮来控制
 
-  // 添加全选类型过滤命令
-  orca.commands.registerCommand(`${pluginName}.selectAllTypeFilters`, () => {
-    if (pageDisplay) {
-      pageDisplay.setAllTypeFilters(true);
-      orca.notify("info", "已选择所有类型");
-    }
-  }, "全选所有类型");
-
-  // 添加全不选类型过滤命令
-  orca.commands.registerCommand(`${pluginName}.selectNoneTypeFilters`, () => {
-    if (pageDisplay) {
-      pageDisplay.setAllTypeFilters(false);
-      orca.notify("info", "已取消选择所有类型");
-    }
-  }, "取消选择所有类型");
-
-  // 添加默认折叠切换命令
-  orca.commands.registerCommand(`${pluginName}.toggleDefaultCollapsed`, () => {
-    if (pageDisplay) {
-      pageDisplay.toggleDefaultCollapsed();
-    }
-  }, "切换默认折叠状态");
-
-  // 添加查看默认折叠状态命令
-  orca.commands.registerCommand(`${pluginName}.getDefaultCollapsedStatus`, () => {
-    if (pageDisplay) {
-      const isDefaultCollapsed = pageDisplay.getDefaultCollapsed();
-      const status = isDefaultCollapsed ? "折叠" : "展开";
-      orca.notify("info", `新页面默认状态: ${status}`);
-    }
-  }, "查看默认折叠状态");
-
-  // 添加调试折叠状态命令
-  orca.commands.registerCommand(`${pluginName}.debugCollapseStatus`, () => {
-    if (pageDisplay) {
-      const info = pageDisplay.getCurrentPageCollapseInfo();
-      const message = `折叠状态调试信息:
-根块ID: ${info.rootBlockId}
-有保存状态: ${info.hasSavedState}
-保存状态: ${info.savedState}
-默认折叠: ${info.defaultCollapsed}
-最终状态: ${info.finalState}`;
-      orca.notify("info", message);
-      console.log("PageDisplay 折叠状态调试:", info);
-    }
-  }, "调试折叠状态");
+  // 移除全局折叠状态命令，统一使用插件面板设置
+  // 不再需要切换默认折叠状态、查看状态和调试命令
+  // 所有设置都通过插件面板的"默认折叠状态"选项来控制
 
   // 设置插件设置模式
   await orca.plugins.setSettingsSchema(pluginName, {
@@ -170,8 +122,9 @@ export async function load(_name: string) {
         }
         if (typeof settings.defaultCollapsed === 'boolean') {
           const currentValue = pageDisplay.getDefaultCollapsed();
+          console.log("PageDisplay: 插件面板设置 - defaultCollapsed:", settings.defaultCollapsed, "当前值:", currentValue);
           if (currentValue !== settings.defaultCollapsed) {
-            console.log("PageDisplay: Default collapsed setting changed:", settings.defaultCollapsed);
+            console.log("PageDisplay: 插件面板设置改变，从", currentValue, "变为", settings.defaultCollapsed);
             pageDisplay.setDefaultCollapsed(settings.defaultCollapsed);
             // 强制更新显示以应用新设置
             pageDisplay.forceUpdate();

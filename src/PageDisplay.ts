@@ -820,6 +820,9 @@ export class PageDisplay {
   private pageCollapseStates: Map<DbId, boolean> = new Map()
   /** 控制默认折叠状态，新页面默认是否折叠 */
   private defaultCollapsed: boolean = true
+
+  /** 存储当前面板的临时折叠状态（不持久化） */
+  private temporaryCollapsedStates: Map<DbId, boolean> = new Map()
   /** 控制每个页面的类型过滤面板显示状态，key为根块ID */
   private pageTypeFilterStates: Map<DbId, boolean> = new Map()
   /** 控制每个页面的日期过滤面板显示状态，key为根块ID */
@@ -997,7 +1000,7 @@ export class PageDisplay {
     if (!this.panelStates.has(rootBlockId)) {
       this.panelStates.set(rootBlockId, {
         searchText: '',
-        isExpanded: !this.defaultCollapsed,
+        isExpanded: !this.getCurrentPageCollapseState(),
         isSearchVisible: false,
         typeFilters: {},
         dateFilter: {
@@ -1032,18 +1035,20 @@ export class PageDisplay {
    */
   private restorePanelState(rootBlockId: DbId, container: HTMLElement) {
     const state = this.getPanelState(rootBlockId)
-    
+
     // 恢复搜索框状态
     const searchInput = container.querySelector('.page-display-search-input') as HTMLInputElement
     if (searchInput) {
       searchInput.value = state.searchText
     }
-    
-    // 恢复展开状态
+
+    // 恢复展开状态 - 使用统一的折叠状态逻辑
     const list = container.querySelector('.page-display-list') as HTMLElement
     const arrow = container.querySelector('.page-display-arrow') as HTMLElement
     if (list && arrow) {
-      if (state.isExpanded) {
+      // 使用统一的折叠状态判断，而不是单独的 isExpanded
+      const shouldCollapse = this.getCurrentPageCollapseState()
+      if (!shouldCollapse) {
         list.style.display = this.multiColumn ? 'grid' : 'block'
         list.style.opacity = '1'
         list.style.maxHeight = '1000px'
@@ -1055,6 +1060,25 @@ export class PageDisplay {
         arrow.innerHTML = '<i class="ti ti-chevron-right"></i>'
       }
     }
+  }
+
+  /**
+   * 恢复面板状态但不包括折叠状态（用于新创建的面板）
+   * @param rootBlockId 根块ID
+   * @param container 容器元素
+   */
+  private restorePanelStateWithoutCollapse(rootBlockId: DbId, container: HTMLElement) {
+    console.log("PageDisplay: restorePanelStateWithoutCollapse - 恢复非折叠状态，rootBlockId:", rootBlockId)
+    const state = this.getPanelState(rootBlockId)
+
+    // 只恢复搜索框状态，不恢复折叠状态
+    const searchInput = container.querySelector('.page-display-search-input') as HTMLInputElement
+    if (searchInput) {
+      searchInput.value = state.searchText
+    }
+
+    // 不恢复折叠状态，因为初始状态已经在 createDisplay 中正确设置
+    // 这样可以避免覆盖正确的默认折叠状态
     
     // 恢复搜索框显示状态
     const searchContainer = container.querySelector('.page-display-search-container') as HTMLElement
@@ -2778,12 +2802,8 @@ const typeConfigs = [
         }
         this.showDateFilters = parsedSettings.showDateFilters ?? false
         
-        // 加载页面折叠状态
-        if (parsedSettings.pageCollapseStates) {
-          this.pageCollapseStates = new Map(
-            Object.entries(parsedSettings.pageCollapseStates).map(([key, value]) => [Number(key), value as boolean])
-          )
-        }
+        // 不再加载页面折叠状态，所有页面使用统一设置
+        // pageCollapseStates 保留用于兼容性，但不再使用
       }
     } catch (error) {
       console.error("PageDisplay: Failed to load settings, using defaults:", error)
@@ -2794,6 +2814,7 @@ const typeConfigs = [
   // 保存设置
   private async saveSettings() {
     try {
+      console.log("PageDisplay: saveSettings 开始保存，defaultCollapsed:", this.defaultCollapsed)
       const settings = {
         showIcons: this.showIcons,
         multiLine: this.multiLine,
@@ -2813,9 +2834,8 @@ const typeConfigs = [
           relativeDate: this.dateFilterConfig.relativeDate,
           dateField: this.dateFilterConfig.dateField
         },
-        showDateFilters: this.showDateFilters,
-        // 保存页面折叠状态
-        pageCollapseStates: Object.fromEntries(this.pageCollapseStates)
+        showDateFilters: this.showDateFilters
+        // 不再保存页面折叠状态，所有页面使用统一设置
       }
       await orca.plugins.setData(this.pluginName, "page-display-settings", JSON.stringify(settings))
     } catch (error) {
@@ -3879,31 +3899,36 @@ const typeConfigs = [
 
   /**
    * 获取当前页面的折叠状态
-   * @returns 当前页面是否处于折叠状态，如果页面没有保存状态则使用默认折叠设置
+   * @returns 当前页面是否处于折叠状态，优先使用临时状态，否则使用默认设置
    */
   private getCurrentPageCollapseState(): boolean {
     const rootBlockId = this.getCurrentRootBlockId()
-    if (!rootBlockId) return this.defaultCollapsed
-    
-    // 如果页面有保存的折叠状态，使用保存的状态
-    if (this.pageCollapseStates.has(rootBlockId)) {
-      return this.pageCollapseStates.get(rootBlockId)!
+    if (!rootBlockId) {
+      console.log("PageDisplay: getCurrentPageCollapseState - 没有rootBlockId，使用默认设置:", this.defaultCollapsed)
+      return this.defaultCollapsed
     }
-    
-    // 如果页面没有保存的折叠状态，使用默认折叠设置
+
+    // 如果有临时折叠状态，使用临时状态
+    if (this.temporaryCollapsedStates.has(rootBlockId)) {
+      const tempState = this.temporaryCollapsedStates.get(rootBlockId)!
+      console.log("PageDisplay: getCurrentPageCollapseState - 使用临时状态:", tempState, "rootBlockId:", rootBlockId)
+      return tempState
+    }
+
+    // 否则使用默认折叠设置
+    console.log("PageDisplay: getCurrentPageCollapseState - 使用默认设置:", this.defaultCollapsed, "rootBlockId:", rootBlockId)
     return this.defaultCollapsed
   }
 
   /**
-   * 设置当前页面的折叠状态
+   * 设置当前页面的折叠状态（保存到临时状态，不持久化）
    * @param collapsed 是否折叠
    */
   private setCurrentPageCollapseState(collapsed: boolean): void {
     const rootBlockId = this.getCurrentRootBlockId()
     if (rootBlockId) {
-      this.pageCollapseStates.set(rootBlockId, collapsed)
-      // 保存设置到本地存储
-      this.saveSettings()
+      // 保存到临时状态，不持久化到本地存储
+      this.temporaryCollapsedStates.set(rootBlockId, collapsed)
     }
   }
 
@@ -3920,9 +3945,18 @@ const typeConfigs = [
    * @param collapsed 是否默认折叠
    */
   public setDefaultCollapsed(collapsed: boolean): void {
+    console.log("PageDisplay: setDefaultCollapsed 被调用，参数:", collapsed, "当前值:", this.defaultCollapsed)
     this.defaultCollapsed = collapsed
+    console.log("PageDisplay: 保存设置前，defaultCollapsed已设置为:", this.defaultCollapsed)
     this.saveSettings()
     this.log(`PageDisplay: 默认折叠状态已设置为: ${collapsed ? '折叠' : '展开'}`)
+
+    // 清除所有临时折叠状态，让所有页面使用新的默认设置
+    this.temporaryCollapsedStates.clear()
+
+    // 强制更新所有显示的面板
+    console.log("PageDisplay: 调用 forceUpdate")
+    this.forceUpdate()
   }
 
   /**
@@ -3971,38 +4005,11 @@ const typeConfigs = [
     }
   }
 
-  /**
-   * 切换默认折叠状态
-   */
-  public toggleDefaultCollapsed(): void {
-    this.setDefaultCollapsed(!this.defaultCollapsed)
-    const status = this.defaultCollapsed ? "折叠" : "展开"
-    orca.notify("info", `新页面默认状态已设置为${status}`)
-  }
+  // 移除 toggleDefaultCollapsed 函数，统一使用插件面板设置
+  // 不再需要通过全局命令切换默认折叠状态
 
-  /**
-   * 获取当前页面的折叠状态信息（调试用）
-   */
-  public getCurrentPageCollapseInfo(): {
-    rootBlockId: DbId | null
-    hasSavedState: boolean
-    savedState: boolean | null
-    defaultCollapsed: boolean
-    finalState: boolean
-  } {
-    const rootBlockId = this.getCurrentRootBlockId()
-    const hasSavedState = rootBlockId ? this.pageCollapseStates.has(rootBlockId) : false
-    const savedState = rootBlockId ? (this.pageCollapseStates.get(rootBlockId) ?? null) : null
-    const finalState = this.getCurrentPageCollapseState()
-    
-    return {
-      rootBlockId,
-      hasSavedState,
-      savedState,
-      defaultCollapsed: this.defaultCollapsed,
-      finalState
-    }
-  }
+  // 移除 getCurrentPageCollapseInfo 调试函数，不再需要调试命令
+  // 简化设置，只保留插件面板的设置选项
 
   // 获取子标签块
   private async getChildrenTagBlocks(blockId: DbId): Promise<Block[]> {
@@ -7277,7 +7284,7 @@ const typeConfigs = [
 
     // 创建容器
     const container = document.createElement('div')
-    container.setAttribute('data-panel-id', targetPanelId) // 标记所属面板
+    // 移除 data-panel-id 属性以避免冲突
     this.applyStyles(container, 'page-display-container')
 
     // 创建标题容器
@@ -7776,23 +7783,24 @@ const typeConfigs = [
         list.style.opacity = '0'
         list.style.maxHeight = '0'
         arrow.innerHTML = '<i class="ti ti-chevron-right"></i>' // 折叠时箭头向右
-        
-        // 隐藏功能按钮容器
+
+        // 同时隐藏功能按钮容器 - 只对功能按钮容器使用透明度方式避免裁切
+        functionButtonsContainer.style.transition = 'opacity 0.2s ease'
         functionButtonsContainer.style.opacity = '0'
-        
+
         // 如果搜索框是显示的，也隐藏它
         if (isSearchVisible) {
           searchContainer.style.opacity = '0'
           searchContainer.style.maxHeight = '0'
         }
-        
+
         // 隐藏类型过滤面板（如果存在且可见）
         const typeFilterPanel = container.querySelector('.page-display-type-filter-panel') as HTMLElement
         if (typeFilterPanel && typeFilterPanel.style.display !== 'none') {
           typeFilterPanel.style.opacity = '0'
           typeFilterPanel.style.transform = 'translateY(-10px)'
         }
-        
+
         // 隐藏日期过滤面板（如果存在且可见）
         const dateFilterPanel = container.querySelector('.page-display-date-filter-panel') as HTMLElement
         if (dateFilterPanel && dateFilterPanel.style.display !== 'none') {
@@ -7800,16 +7808,16 @@ const typeConfigs = [
           dateFilterPanel.style.transform = 'translateY(-10px)'
         }
         
-        // 延迟设置display为none，确保过渡完成
+        // 延迟设置display为none，确保过渡完成（除了功能按钮容器）
         setTimeout(() => {
           if (this.getCurrentPageCollapseState()) {
             list.style.display = 'none'
             if (isSearchVisible) {
               searchContainer.style.display = 'none'
             }
-            // 完全隐藏功能按钮容器
-            functionButtonsContainer.style.display = 'none'
-            // 完全隐藏过滤面板
+            // 功能按钮容器不设置display none，避免裁切问题
+
+            // 隐藏过滤面板
             if (typeFilterPanel && typeFilterPanel.style.display !== 'none') {
               typeFilterPanel.style.display = 'none'
             }
@@ -7828,16 +7836,17 @@ const typeConfigs = [
         list.style.display = 'block'
         }
         
-        // 恢复功能按钮容器的显示
-        functionButtonsContainer.style.display = 'flex'
-        
+        // 恢复功能按钮容器，保持display flex，只用透明度过渡
+        functionButtonsContainer.style.transition = 'opacity 0.2s ease'
+        functionButtonsContainer.style.opacity = '0' // 先设为透明
+
         // 强制重排以触发过渡
         list.offsetHeight
-        
+
         list.style.opacity = '1'
         list.style.maxHeight = '1000px'
         arrow.innerHTML = '<i class="ti ti-chevron-down"></i>' // 展开时箭头向下
-        
+
         // 恢复功能按钮容器的透明度
         setTimeout(() => {
           functionButtonsContainer.style.opacity = '1'
@@ -7852,26 +7861,26 @@ const typeConfigs = [
             searchIcon.style.background = 'var(--page-display-search-bg-hover)'
           }, 50)
         }
-        
-    // 恢复类型过滤面板的显示（如果之前是显示的）
-    const typeFilterPanel = container.querySelector('.page-display-type-filter-panel') as HTMLElement
-    if (typeFilterPanel && rootBlockId && this.getCurrentPageTypeFilterState()) {
-      typeFilterPanel.style.display = 'block'
-      setTimeout(() => {
-        typeFilterPanel.style.opacity = '1'
-        typeFilterPanel.style.transform = 'translateY(0)'
-      }, 50)
-    }
-    
-    // 恢复日期过滤面板的显示（如果之前是显示的）
-    const dateFilterPanel = container.querySelector('.page-display-date-filter-panel') as HTMLElement
-    if (dateFilterPanel && rootBlockId && this.getCurrentPageDateFilterState()) {
-      dateFilterPanel.style.display = 'block'
-      setTimeout(() => {
-        dateFilterPanel.style.opacity = '1'
-        dateFilterPanel.style.transform = 'translateY(0)'
-      }, 50)
-    }
+
+        // 恢复类型过滤面板的显示（如果之前是显示的）
+        const typeFilterPanel = container.querySelector('.page-display-type-filter-panel') as HTMLElement
+        if (typeFilterPanel && rootBlockId && this.getCurrentPageTypeFilterState()) {
+          typeFilterPanel.style.display = 'block'
+          setTimeout(() => {
+            typeFilterPanel.style.opacity = '1'
+            typeFilterPanel.style.transform = 'translateY(0)'
+          }, 50)
+        }
+
+        // 恢复日期过滤面板的显示（如果之前是显示的）
+        const dateFilterPanel = container.querySelector('.page-display-date-filter-panel') as HTMLElement
+        if (dateFilterPanel && rootBlockId && this.getCurrentPageDateFilterState()) {
+          dateFilterPanel.style.display = 'block'
+          setTimeout(() => {
+            dateFilterPanel.style.opacity = '1'
+            dateFilterPanel.style.transform = 'translateY(0)'
+          }, 50)
+        }
         
         // 搜索框只有在用户主动点击搜索图标时才显示
         // 这里不自动显示搜索框
@@ -7881,12 +7890,8 @@ const typeConfigs = [
         }, 100)
       }
       
-      // 保存展开状态
-      if (rootBlockId) {
-        const currentState = this.getPanelState(rootBlockId)
-        currentState.isExpanded = !newCollapsed
-        this.savePanelState(rootBlockId, currentState)
-      }
+      // 不再保存折叠状态，现在所有页面都使用统一的默认设置
+      // 点击折叠/展开只影响当前显示，不持久化状态
     }
     
     // 添加点击事件
@@ -8683,22 +8688,23 @@ const typeConfigs = [
     updateDisplay()
     
     // 根据当前页面的折叠状态设置初始显示
-    if (this.getCurrentPageCollapseState()) {
+    const shouldCollapse = this.getCurrentPageCollapseState()
+    console.log("PageDisplay: createDisplay - 初始折叠检查，shouldCollapse:", shouldCollapse)
+    if (shouldCollapse) {
       list.style.display = 'none'
       list.style.opacity = '0'
       list.style.maxHeight = '0'
       arrow.innerHTML = '<i class="ti ti-chevron-right"></i>'
-      
-      // 隐藏功能按钮容器
-      functionButtonsContainer.style.display = 'none'
+
+      // 隐藏功能按钮容器 - 只对功能按钮容器使用透明度方式避免裁切
       functionButtonsContainer.style.opacity = '0'
-      
+
       if (searchContainer.style.display !== 'none') {
         searchContainer.style.display = 'none'
         searchContainer.style.opacity = '0'
         searchContainer.style.maxHeight = '0'
       }
-      
+
       // 隐藏类型过滤面板（如果存在）
       const typeFilterPanel = container.querySelector('.page-display-type-filter-panel') as HTMLElement
       if (typeFilterPanel) {
@@ -8707,7 +8713,7 @@ const typeConfigs = [
         typeFilterPanel.style.visibility = 'hidden'
         typeFilterPanel.style.transform = 'translateY(-10px)'
       }
-      
+
       // 隐藏日期过滤面板（如果存在）
       const dateFilterPanel = container.querySelector('.page-display-date-filter-panel') as HTMLElement
       if (dateFilterPanel) {
@@ -8805,9 +8811,9 @@ const typeConfigs = [
     this.log("PageDisplay: Container parent:", container.parentNode)
     this.log("PageDisplay: Container visible:", container.offsetHeight > 0)
     
-    // 恢复面板状态
+    // 恢复面板状态（但不包括折叠状态，因为折叠状态现在使用统一设置）
     if (rootBlockId) {
-      this.restorePanelState(rootBlockId, container)
+      this.restorePanelStateWithoutCollapse(rootBlockId, container)
     }
     
   }
