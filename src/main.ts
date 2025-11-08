@@ -102,6 +102,36 @@ export async function load(_name: string) {
       description: "新页面的页面空间默认是否折叠",
       type: "boolean",
       defaultValue: true
+    },
+    defaultGroupingMode: {
+      label: "默认分组模式",
+      description: "选择页面空间的默认分组方式",
+      type: "singleChoice",
+      defaultValue: "none",
+      choices: [
+        { value: "none", label: "不分组" },
+        { value: "date", label: "按日期分组" }
+      ]
+    },
+    defaultGroupingDateFormat: {
+      label: "日期分组字段",
+      description: "按日期分组时使用的日期字段",
+      type: "singleChoice",
+      defaultValue: "created",
+      choices: [
+        { value: "created", label: "创建日期" },
+        { value: "modified", label: "修改日期" }
+      ]
+    },
+    defaultDateGroupingType: {
+      label: "日期分组类型",
+      description: "按日期分组时的分组方式",
+      type: "singleChoice",
+      defaultValue: "period",
+      choices: [
+        { value: "period", label: "按时期分组" },
+        { value: "daily", label: "按天分组" }
+      ]
     }
   });
 
@@ -128,6 +158,39 @@ export async function load(_name: string) {
             pageDisplay.setDefaultCollapsed(settings.defaultCollapsed);
             // 强制更新显示以应用新设置
             pageDisplay.forceUpdate();
+          }
+        }
+        if (settings.defaultGroupingMode && ['none', 'document', 'date'].includes(settings.defaultGroupingMode)) {
+          const currentConfig = pageDisplay.getGroupingConfig();
+          if (currentConfig.mode !== settings.defaultGroupingMode) {
+            console.log("PageDisplay: Default grouping mode setting changed:", settings.defaultGroupingMode);
+            const newConfig = {
+              ...currentConfig,
+              mode: settings.defaultGroupingMode
+            };
+            pageDisplay.setGroupingConfig(newConfig);
+          }
+        }
+        if (settings.defaultGroupingDateFormat && ['created', 'modified'].includes(settings.defaultGroupingDateFormat)) {
+          const currentConfig = pageDisplay.getGroupingConfig();
+          if (currentConfig.dateFormat !== settings.defaultGroupingDateFormat) {
+            console.log("PageDisplay: Default grouping date format setting changed:", settings.defaultGroupingDateFormat);
+            const newConfig = {
+              ...currentConfig,
+              dateFormat: settings.defaultGroupingDateFormat
+            };
+            pageDisplay.setGroupingConfig(newConfig);
+          }
+        }
+        if (settings.defaultDateGroupingType && ['period', 'daily'].includes(settings.defaultDateGroupingType)) {
+          const currentConfig = pageDisplay.getGroupingConfig();
+          if (currentConfig.dateGroupingType !== settings.defaultDateGroupingType) {
+            console.log("PageDisplay: Default date grouping type setting changed:", settings.defaultDateGroupingType);
+            const newConfig = {
+              ...currentConfig,
+              dateGroupingType: settings.defaultDateGroupingType
+            };
+            pageDisplay.setGroupingConfig(newConfig);
           }
         }
       }

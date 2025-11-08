@@ -660,6 +660,13 @@ class StyleManager {
 type PageDisplayItemType = 'tag' | 'referenced-tag' | 'property-ref-alias' | 'property-ref-block' | 'contained-in' | 'inline-ref' | 'referencing-alias' | 'child-referenced-alias' | 'child-referenced-tag-alias' | 'child-referenced-inline' | 'backref-alias-blocks' | 'backref' | 'recursive-backref' | 'recursive-backref-alias' | 'backref-backref-alias' | 'backref-backref-block' | 'page-direct-children' | 'page-recursive-children' | 'candidate-reference'
 
 type DisplayMode = 'flat' | 'grouped'
+type GroupingMode = 'none' | 'date'
+type DateGroupingType = 'period' | 'daily'
+type GroupingConfig = {
+  mode: GroupingMode
+  dateFormat: 'created' | 'modified'
+  dateGroupingType: DateGroupingType
+}
 type DisplayGroupsMap = Record<PageDisplayItemType, PageDisplayItem[]>
 interface DisplayGroupDefinition {
   type: PageDisplayItemType
@@ -837,6 +844,16 @@ export class PageDisplay {
   private displayMode: DisplayMode = 'flat'
   /** 可用显示模式列表 */
   private readonly DISPLAY_MODES: DisplayMode[] = ['flat', 'grouped']
+  /** 分组配置 */
+  private groupingConfig: GroupingConfig = {
+    mode: 'none',
+    dateFormat: 'created',
+    dateGroupingType: 'period'
+  }
+  /** 可用分组模式列表 */
+  private readonly GROUPING_MODES: GroupingMode[] = ['none', 'date']
+  /** 可用日期分组类型列表 */
+  private readonly DATE_GROUPING_TYPES: DateGroupingType[] = ['period', 'daily']
   /** 控制是否支持Journal页面，默认启用 */
   private journalPageSupport: boolean = true
   /** Journal页面块ID缓存，key为日期字符串，value为块ID */
@@ -1205,6 +1222,138 @@ export class PageDisplay {
     this.displayMode = mode
     this.saveSettings()
     await this.forceUpdate()
+  }
+
+  /**
+   * 设置分组配置
+   * @param config 分组配置
+   */
+  public async setGroupingConfig(config: GroupingConfig): Promise<void> {
+    this.groupingConfig = config
+    this.saveSettings()
+    await this.forceUpdate()
+  }
+
+  /**
+   * 获取分组配置
+   * @returns 分组配置
+   */
+  public getGroupingConfig(): GroupingConfig {
+    return { ...this.groupingConfig }
+  }
+
+  /**
+   * 设置分组模式
+   * @param mode 分组模式
+   */
+  public async setGroupingMode(mode: GroupingMode): Promise<void> {
+    this.groupingConfig.mode = mode
+    this.saveSettings()
+    await this.forceUpdate()
+  }
+
+  /**
+   * 获取分组模式
+   * @returns 分组模式
+   */
+  public getGroupingMode(): GroupingMode {
+    return this.groupingConfig.mode
+  }
+
+  /**
+   * 设置分组日期格式
+   * @param format 日期格式
+   */
+  public async setGroupingDateFormat(format: 'created' | 'modified'): Promise<void> {
+    this.groupingConfig.dateFormat = format
+    this.saveSettings()
+    await this.forceUpdate()
+  }
+
+  /**
+   * 获取分组日期格式
+   * @returns 日期格式
+   */
+  public getGroupingDateFormat(): 'created' | 'modified' {
+    return this.groupingConfig.dateFormat
+  }
+
+  /**
+   * 设置日期分组类型
+   * @param type 日期分组类型
+   */
+  public async setDateGroupingType(type: DateGroupingType): Promise<void> {
+    this.groupingConfig.dateGroupingType = type
+    this.saveSettings()
+    await this.forceUpdate()
+  }
+
+  /**
+   * 获取日期分组类型
+   * @returns 日期分组类型
+   */
+  public getDateGroupingType(): DateGroupingType {
+    return this.groupingConfig.dateGroupingType
+  }
+
+  /**
+   * 切换分组模式
+   */
+  public async cycleGroupingMode(): Promise<GroupingMode> {
+    const currentIndex = this.GROUPING_MODES.indexOf(this.groupingConfig.mode)
+    const nextIndex = (currentIndex + 1) % this.GROUPING_MODES.length
+    const nextMode = this.GROUPING_MODES[nextIndex]
+    await this.setGroupingMode(nextMode)
+    return nextMode
+  }
+
+  /**
+   * 切换日期分组类型
+   */
+  public async cycleDateGroupingType(): Promise<DateGroupingType> {
+    const currentIndex = this.DATE_GROUPING_TYPES.indexOf(this.groupingConfig.dateGroupingType)
+    const nextIndex = (currentIndex + 1) % this.DATE_GROUPING_TYPES.length
+    const nextType = this.DATE_GROUPING_TYPES[nextIndex]
+    await this.setDateGroupingType(nextType)
+    return nextType
+  }
+
+  /**
+   * 获取分组模式标签
+   * @param mode 分组模式
+   * @returns 模式标签
+   */
+  public getGroupingModeLabel(mode: GroupingMode = this.groupingConfig.mode): string {
+    switch (mode) {
+      case 'date':
+        if (this.groupingConfig.dateGroupingType === 'daily') {
+          return `按${this.groupingConfig.dateFormat === 'created' ? '创建' : '修改'}日期（天）分组`
+        } else {
+          return `按${this.groupingConfig.dateFormat === 'created' ? '创建' : '修改'}日期（时期）分组`
+        }
+      case 'none':
+      default:
+        return '不分组'
+    }
+  }
+
+  /**
+   * 获取分组模式图标类名
+   * @param mode 分组模式
+   * @returns 图标类名
+   */
+  public getGroupingIconClass(mode: GroupingMode = this.groupingConfig.mode): string {
+    switch (mode) {
+      case 'date':
+        if (this.groupingConfig.dateGroupingType === 'daily') {
+          return 'ti-calendar-event'
+        } else {
+          return 'ti-calendar'
+        }
+      case 'none':
+      default:
+        return 'ti-list'
+    }
   }
 
   /**
@@ -1696,16 +1845,20 @@ export class PageDisplay {
 
     return items.filter(item => {
       // 获取项目的日期（创建或修改日期）
-      const itemDate = this.getItemDate(item)
+      const itemDate = this.getItemDate(item, this.dateFilterConfig.dateField)
       if (!itemDate) {
         return false
       }
 
       // 检查日期范围
-      if (startDate && itemDate < startDate) {
+      const itemDateTime = new Date(itemDate).getTime()
+      const startDateTime = startDate ? startDate.getTime() : 0
+      const endDateTime = endDate ? endDate.getTime() : Infinity
+
+      if (startDateTime && itemDateTime < startDateTime) {
         return false
       }
-      if (endDate && itemDate >= endDate) {
+      if (endDateTime && itemDateTime >= endDateTime) {
         return false
       }
 
@@ -1713,19 +1866,7 @@ export class PageDisplay {
     })
   }
 
-  /**
-   * 获取项目的日期
-   * @param item 项目
-   * @returns 项目日期
-   */
-  private getItemDate(item: PageDisplayItem): Date | null {
-    if (this.dateFilterConfig.dateField === 'created') {
-      return item.created ? new Date(item.created) : null
-    } else {
-      return item.modified ? new Date(item.modified) : null
-    }
-  }
-
+  
   /**
    * 创建类型过滤控制面板
    * @returns 类型过滤面板元素
@@ -2944,6 +3085,15 @@ const typeConfigs = [
         if (savedMode === 'flat' || savedMode === 'grouped') {
           this.displayMode = savedMode
         }
+
+        // 加载分组配置
+        if (parsedSettings.groupingConfig) {
+          this.groupingConfig = {
+            mode: parsedSettings.groupingConfig.mode ?? 'none',
+            dateFormat: parsedSettings.groupingConfig.dateFormat ?? 'created',
+            dateGroupingType: parsedSettings.groupingConfig.dateGroupingType ?? 'period'
+          }
+        }
         // 加载类型过滤设置
         if (parsedSettings.typeFilters) {
           this.typeFilters = new Map(
@@ -2985,6 +3135,8 @@ const typeConfigs = [
         backrefAliasQueryEnabled: this.backrefAliasQueryEnabled,
         journalPageSupport: this.journalPageSupport,
         defaultCollapsed: this.defaultCollapsed,
+        // 保存分组配置
+        groupingConfig: this.groupingConfig,
         // 保存类型过滤设置
         typeFilters: Object.fromEntries(this.typeFilters),
         showTypeFilters: this.showTypeFilters,
@@ -3692,6 +3844,464 @@ const typeConfigs = [
       default:
         return '列表模式'
     }
+  }
+
+  
+  /**
+   * 按日期分组项目
+   * @param items 要分组的项目列表
+   * @param dateField 日期字段
+   * @param groupingType 分组类型
+   * @returns 按日期分组的项目映射
+   */
+  private groupByDate(items: PageDisplayItem[], dateField: 'created' | 'modified', groupingType: DateGroupingType): Map<string, PageDisplayItem[]> {
+    const groups = new Map<string, PageDisplayItem[]>()
+
+    items.forEach(item => {
+      const date = this.getItemDate(item, dateField)
+      let groupKey = ''
+
+      if (date) {
+        const itemDate = new Date(date)
+
+        if (groupingType === 'daily') {
+          // 按天分组
+          const now = new Date()
+          const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+          const itemDay = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate())
+          const diffTime = today.getTime() - itemDay.getTime()
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+
+          if (diffDays === 0) {
+            groupKey = '今天'
+          } else if (diffDays === 1) {
+            groupKey = '昨天'
+          } else if (diffDays === -1) {
+            groupKey = '明天'
+          } else if (diffDays > 1 && diffDays <= 7) {
+            groupKey = `${diffDays}天前`
+          } else if (diffDays < -1 && diffDays >= -7) {
+            groupKey = `${Math.abs(diffDays)}天后`
+          } else {
+            // 格式化日期：YYYY-MM-DD
+            const year = itemDate.getFullYear()
+            const month = String(itemDate.getMonth() + 1).padStart(2, '0')
+            const day = String(itemDate.getDate()).padStart(2, '0')
+            groupKey = `${year}-${month}-${day}`
+          }
+        } else {
+          // 按时期分组（原有逻辑）
+          const now = new Date()
+          const diffTime = Math.abs(now.getTime() - itemDate.getTime())
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+          if (diffDays === 0) {
+            groupKey = '今天'
+          } else if (diffDays === 1) {
+            groupKey = '昨天'
+          } else if (diffDays <= 7) {
+            groupKey = '最近7天'
+          } else if (diffDays <= 30) {
+            groupKey = '最近30天'
+          } else if (itemDate.getFullYear() === now.getFullYear()) {
+            groupKey = `${itemDate.getMonth() + 1}月`
+          } else {
+            groupKey = `${itemDate.getFullYear()}年`
+          }
+        }
+      } else {
+        groupKey = '未知日期'
+      }
+
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, [])
+      }
+      groups.get(groupKey)!.push(item)
+    })
+
+    return groups
+  }
+
+  /**
+   * 获取项目的日期
+   * @param item 项目
+   * @param field 日期字段
+   * @returns 日期字符串
+   */
+  private getItemDate(item: PageDisplayItem, field: 'created' | 'modified'): string | null {
+    switch (field) {
+      case 'created':
+        return item.created ? new Date(item.created).toISOString() : null
+      case 'modified':
+        return item.modified ? new Date(item.modified).toISOString() : null
+      default:
+        return null
+    }
+  }
+
+  /**
+   * 对项目进行分组
+   * @param items 要分组的项目列表
+   * @returns 分组后的项目
+   */
+  private groupItems(items: PageDisplayItem[]): Array<{
+    key: string
+    label: string
+    items: PageDisplayItem[]
+    count: number
+  }> {
+    if (this.groupingConfig.mode === 'none') {
+      return []
+    }
+
+    let groups: Map<string, PageDisplayItem[]>
+
+    switch (this.groupingConfig.mode) {
+      case 'date':
+        groups = this.groupByDate(items, this.groupingConfig.dateFormat, this.groupingConfig.dateGroupingType)
+        break
+      default:
+        return []
+    }
+
+    // 转换为数组并排序
+    const result = Array.from(groups.entries()).map(([key, groupItems]) => ({
+      key,
+      label: key,
+      items: groupItems,
+      count: groupItems.length
+    }))
+
+    // 对分组进行排序
+    return this.sortGroups(result)
+  }
+
+  /**
+   * 对分组进行排序
+   * @param groups 分组列表
+   * @returns 排序后的分组列表
+   */
+  private sortGroups(groups: Array<{
+    key: string
+    label: string
+    items: PageDisplayItem[]
+    count: number
+  }>): Array<{
+    key: string
+    label: string
+    items: PageDisplayItem[]
+    count: number
+  }> {
+    return groups.sort((a, b) => {
+      // 特殊分组优先级排序
+      const priorityOrder = [
+        '今天', '昨天', '明天', '1天前', '2天前', '3天前', '4天前', '5天前', '6天前', '7天前',
+        '1天后', '2天后', '3天后', '4天后', '5天后', '6天后', '7天后',
+        '最近7天', '最近30天', '其他'
+      ]
+
+      const aPriority = priorityOrder.findIndex(item => a.label.startsWith(item))
+      const bPriority = priorityOrder.findIndex(item => b.label.startsWith(item))
+
+      if (aPriority !== -1 && bPriority !== -1) {
+        return aPriority - bPriority
+      }
+      if (aPriority !== -1) return -1
+      if (bPriority !== -1) return 1
+
+      // 对于日期格式（YYYY-MM-DD），按日期倒序排序
+      if (a.label.match(/^\d{4}-\d{2}-\d{2}$/) && b.label.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return b.label.localeCompare(a.label) // 倒序
+      }
+
+      // 默认按标签字母排序
+      return a.label.localeCompare(b.label, 'zh-CN')
+    })
+  }
+
+  /**
+   * 简化版项目渲染方法（用于分组显示）
+   * @param list 列表容器元素
+   * @param items 要渲染的项目列表
+   * @param searchInput 搜索输入框
+   * @param tagBlockIds 标签块ID列表
+   * @param inlineRefIds 内联引用块ID列表
+   * @param containedInBlockIds 包含于块ID列表
+   */
+  private renderItemsSimple(
+    list: HTMLElement,
+    items: PageDisplayItem[],
+    searchInput: HTMLInputElement,
+    tagBlockIds: DbId[],
+    inlineRefIds: DbId[],
+    containedInBlockIds: DbId[]
+  ): void {
+    items.forEach(item => {
+      // 创建项目包装容器
+      const itemWrapper = document.createElement('div')
+      itemWrapper.className = 'page-display-item-wrapper'
+      itemWrapper.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        margin-bottom: 4px;
+      `
+
+      // 创建项目元素
+      const itemElement = document.createElement('li')
+      itemElement.className = `page-display-item${this.multiLine ? ' multi-line' : ' single-line'} ${item.itemType}`
+      itemElement.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+        font-size: var(--orca-fontsize-sm);
+        color: var(--orca-color-text-1);
+      `
+
+      // 创建图标
+      const icon = document.createElement('span')
+      if (this.showIcons) {
+        if (item._icon) {
+          icon.textContent = item._icon
+        } else {
+          // 使用默认图标
+          icon.className = 'ti ti-file-text'
+        }
+        icon.style.cssText = `
+          font-size: 14px;
+          color: var(--orca-color-text-2);
+          min-width: 16px;
+        `
+      } else {
+        icon.textContent = '•'
+        icon.style.cssText = `
+          font-size: 14px;
+          color: var(--orca-color-text-2);
+          min-width: 16px;
+        `
+      }
+      itemElement.appendChild(icon)
+
+      // 创建文本内容
+      const text = document.createElement('span')
+      const searchTerm = searchInput.value.trim()
+      if (searchTerm) {
+        const keywords = searchTerm.toLowerCase().split(/\s+/).filter(k => k.length > 0)
+        const highlightedText = this.highlightSearchTerms(item.text, keywords)
+        text.innerHTML = highlightedText
+      } else {
+        text.textContent = item.text
+      }
+      text.style.cssText = `
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: ${this.multiLine ? 'normal' : 'nowrap'};
+      `
+      itemElement.appendChild(text)
+
+      // 添加点击事件
+      itemElement.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+
+        if (e.shiftKey) {
+          this.openBlockInSidePanel(item.id)
+        } else {
+          this.openBlock(item.id)
+        }
+      })
+
+      // 添加悬停效果
+      itemElement.addEventListener('mouseenter', () => {
+        itemElement.style.backgroundColor = 'var(--orca-color-bg-3)'
+      })
+      itemElement.addEventListener('mouseleave', () => {
+        itemElement.style.backgroundColor = 'transparent'
+      })
+
+      itemWrapper.appendChild(itemElement)
+      list.appendChild(itemWrapper)
+    })
+  }
+
+  /**
+   * 渲染分组项目列表
+   * @param list 列表容器元素
+   * @param items 要渲染的项目列表
+   * @param searchInput 搜索输入框
+   * @param tagBlockIds 标签块ID列表
+   * @param inlineRefIds 内联引用块ID列表
+   * @param containedInBlockIds 包含于块ID列表
+   */
+  private renderGroupedItems(
+    list: HTMLElement,
+    items: PageDisplayItem[],
+    searchInput: HTMLInputElement,
+    tagBlockIds: DbId[],
+    inlineRefIds: DbId[],
+    containedInBlockIds: DbId[]
+  ): void {
+    // 获取分组
+    const groups = this.groupItems(items)
+
+    if (groups.length === 0) {
+      // 如果没有分组，回退到普通渲染
+      // 直接渲染所有项目（简化版本）
+      this.renderItemsSimple(list, items, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
+      return
+    }
+
+    // 渲染每个分组
+    groups.forEach(group => {
+      // 创建分组容器
+      const groupContainer = document.createElement('div')
+      groupContainer.className = 'page-display-group-container'
+      groupContainer.style.cssText = `
+        margin-bottom: 16px;
+        border: 1px solid var(--orca-border-separator);
+        border-radius: var(--orca-radius-md);
+        background: var(--orca-color-bg-2);
+        overflow: hidden;
+      `
+
+      // 创建分组标题
+      const groupHeader = document.createElement('div')
+      groupHeader.className = 'page-display-group-header'
+      groupHeader.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        background: var(--orca-color-bg-3);
+        border-bottom: 1px solid var(--orca-border-separator);
+        cursor: pointer;
+        user-select: none;
+        transition: background-color 0.2s ease;
+      `
+
+      // 分组标题左侧（图标和名称）
+      const groupTitleLeft = document.createElement('div')
+      groupTitleLeft.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: var(--orca-fontweight-md);
+        color: var(--orca-color-text-1);
+        font-size: var(--orca-fontsize-sm);
+      `
+
+      // 添加分组图标
+      const groupIcon = document.createElement('span')
+      groupIcon.className = 'page-display-group-icon'
+      if (this.groupingConfig.mode === 'date') {
+        if (this.groupingConfig.dateGroupingType === 'daily') {
+          groupIcon.className = 'ti ti-calendar-event'
+        } else {
+          groupIcon.className = 'ti ti-calendar'
+        }
+        groupIcon.style.cssText = `
+          font-size: 14px;
+          color: var(--orca-color-text-2);
+        `
+      } else {
+        groupIcon.className = 'ti ti-list'
+        groupIcon.style.cssText = `
+          font-size: 14px;
+          color: var(--orca-color-text-2);
+        `
+      }
+
+      // 分组名称
+      const groupTitle = document.createElement('span')
+      groupTitle.textContent = group.label
+      groupTitle.style.cssText = `
+        font-weight: var(--orca-fontweight-md);
+        color: var(--orca-color-text-1);
+      `
+
+      // 分组项目数量
+      const groupCount = document.createElement('span')
+      groupCount.textContent = `(${group.count})`
+      groupCount.style.cssText = `
+        font-size: var(--orca-fontsize-xs);
+        color: var(--orca-color-text-3);
+        background: var(--orca-color-bg-1);
+        padding: 2px 6px;
+        border-radius: var(--orca-radius-sm);
+      `
+
+      groupTitleLeft.appendChild(groupIcon)
+      groupTitleLeft.appendChild(groupTitle)
+      groupHeader.appendChild(groupTitleLeft)
+      groupHeader.appendChild(groupCount)
+
+      // 展开/收起箭头
+      const expandArrow = document.createElement('span')
+      expandArrow.className = 'ti ti-chevron-down page-display-group-arrow'
+      expandArrow.style.cssText = `
+        font-size: 12px;
+        color: var(--orca-color-text-2);
+        transition: transform 0.2s ease;
+        transform: rotate(0deg);
+      `
+      groupHeader.appendChild(expandArrow)
+
+      // 创建项目内容容器
+      const groupContent = document.createElement('div')
+      groupContent.className = 'page-display-group-content'
+      groupContent.style.cssText = `
+        max-height: 1000px;
+        overflow: hidden;
+        transition: max-height 0.3s ease, opacity 0.3s ease;
+        opacity: 1;
+      `
+
+      // 创建项目列表
+      const groupList = document.createElement('ul')
+      groupList.className = `page-display-group-list${this.multiColumn ? ' multi-column' : ''}`
+      groupList.style.cssText = `
+        margin: 0;
+        padding: 8px;
+        list-style: none;
+      `
+
+      // 渲染分组内的项目
+      this.renderItemsSimple(groupList, group.items, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
+      groupContent.appendChild(groupList)
+
+      // 添加点击事件来展开/收起分组
+      let isExpanded = true
+      groupHeader.addEventListener('click', () => {
+        isExpanded = !isExpanded
+        if (isExpanded) {
+          groupContent.style.maxHeight = '1000px'
+          groupContent.style.opacity = '1'
+          expandArrow.style.transform = 'rotate(0deg)'
+        } else {
+          groupContent.style.maxHeight = '0'
+          groupContent.style.opacity = '0'
+          expandArrow.style.transform = 'rotate(-90deg)'
+        }
+      })
+
+      // 添加悬停效果
+      groupHeader.addEventListener('mouseenter', () => {
+        groupHeader.style.backgroundColor = 'var(--orca-color-bg-1)'
+      })
+      groupHeader.addEventListener('mouseleave', () => {
+        groupHeader.style.backgroundColor = 'var(--orca-color-bg-3)'
+      })
+
+      // 组装分组容器
+      groupContainer.appendChild(groupHeader)
+      groupContainer.appendChild(groupContent)
+      list.appendChild(groupContainer)
+    })
   }
 
   public async cycleDisplayMode(): Promise<DisplayMode> {
@@ -7576,7 +8186,25 @@ const typeConfigs = [
     multiColumnToggleIcon.className = 'page-display-multicolumn-toggle-icon'
     this.applyStyles(multiColumnToggleIcon, 'page-display-multicolumn-toggle-icon')
     multiColumnToggleIcon.title = this.multiColumn ? '单列显示' : '多列显示'
-    
+
+    // 创建分组模式切换按钮
+    const groupingToggleIcon = document.createElement('div')
+    const groupingIconClass = this.getGroupingIconClass()
+    groupingToggleIcon.innerHTML = `<i class="ti ${groupingIconClass}"></i>`
+    groupingToggleIcon.className = 'page-display-grouping-toggle-icon'
+    this.applyStyles(groupingToggleIcon, 'page-display-grouping-toggle-icon')
+    groupingToggleIcon.title = this.getGroupingModeLabel()
+
+    // 创建日期分组类型切换按钮（仅在日期分组模式下显示）
+    const dateGroupingToggleIcon = document.createElement('div')
+    const dateGroupingIconClass = this.groupingConfig.dateGroupingType === 'daily' ? 'ti-calendar-event' : 'ti-calendar'
+    dateGroupingToggleIcon.innerHTML = `<i class="ti ${dateGroupingIconClass}"></i>`
+    dateGroupingToggleIcon.className = 'page-display-date-grouping-toggle-icon'
+    this.applyStyles(dateGroupingToggleIcon, 'page-display-date-grouping-toggle-icon')
+    dateGroupingToggleIcon.title = this.groupingConfig.dateGroupingType === 'daily' ? '切换到时期分组' : '切换到按天分组'
+    // 初始时隐藏，只有开启日期分组时才显示
+    dateGroupingToggleIcon.style.display = this.groupingConfig.mode === 'date' ? 'block' : 'none'
+
     // 创建排序图标
     const sortIcon = document.createElement('div')
     // 从面板状态中获取当前排序配置，设置初始图标
@@ -7598,6 +8226,8 @@ const typeConfigs = [
     functionButtonsContainer.appendChild(iconsToggleIcon)
     functionButtonsContainer.appendChild(multiLineToggleIcon)
     functionButtonsContainer.appendChild(multiColumnToggleIcon)
+    functionButtonsContainer.appendChild(groupingToggleIcon)
+    functionButtonsContainer.appendChild(dateGroupingToggleIcon)
     
     leftContent.appendChild(arrow)
     leftContent.appendChild(title)
@@ -7911,13 +8541,13 @@ const typeConfigs = [
     multiColumnToggleIcon.addEventListener('click', async (e) => {
       e.preventDefault()
       e.stopPropagation()
-      
+
       // 添加点击反馈
       multiColumnToggleIcon.style.transform = 'scale(0.95)'
       setTimeout(() => {
         multiColumnToggleIcon.style.transform = 'scale(1)'
       }, 100)
-      
+
       await this.toggleMultiColumn()
       multiColumnToggleIcon.title = this.multiColumn ? '单列显示' : '多列显示'
       // 使用更平滑的图标切换，避免innerHTML重新设置
@@ -7926,7 +8556,66 @@ const typeConfigs = [
         icon.className = this.multiColumn ? 'ti ti-layout-columns' : 'ti ti-layout-grid'
       }
     })
-    
+
+    // 分组模式切换按钮事件
+    groupingToggleIcon.addEventListener('click', async (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      // 添加点击反馈
+      groupingToggleIcon.style.transform = 'scale(0.95)'
+      setTimeout(() => {
+        groupingToggleIcon.style.transform = 'scale(1)'
+      }, 100)
+
+      // 切换分组模式
+      const newMode = await this.cycleGroupingMode()
+      groupingToggleIcon.title = this.getGroupingModeLabel(newMode)
+
+      // 更新图标
+      const icon = groupingToggleIcon.querySelector('i')
+      if (icon) {
+        icon.className = `ti ${this.getGroupingIconClass(newMode)}`
+      }
+
+      // 显示或隐藏日期分组类型按钮
+      dateGroupingToggleIcon.style.display = newMode === 'date' ? 'block' : 'none'
+
+      // 如果切换到了分组模式，确保显示模式也是分组模式
+      if (newMode !== 'none' && this.displayMode !== 'grouped') {
+        await this.setDisplayMode('grouped')
+      }
+    })
+
+    // 日期分组类型切换按钮事件
+    dateGroupingToggleIcon.addEventListener('click', async (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      // 添加点击反馈
+      dateGroupingToggleIcon.style.transform = 'scale(0.95)'
+      setTimeout(() => {
+        dateGroupingToggleIcon.style.transform = 'scale(1)'
+      }, 100)
+
+      // 切换日期分组类型
+      const newType = await this.cycleDateGroupingType()
+
+      // 更新图标和提示
+      const icon = dateGroupingToggleIcon.querySelector('i')
+      if (icon) {
+        icon.className = `ti ${newType === 'daily' ? 'ti-calendar-event' : 'ti-calendar'}`
+      }
+      dateGroupingToggleIcon.title = newType === 'daily' ? '切换到时期分组' : '切换到按天分组'
+
+      // 更新分组按钮的图标和提示
+      const groupingIcon = groupingToggleIcon.querySelector('i')
+      if (groupingIcon) {
+        groupingIcon.className = `ti ${newType === 'daily' ? 'ti-calendar-event' : 'ti-calendar'}`
+      }
+      groupingToggleIcon.title = this.getGroupingModeLabel()
+    })
+
     // 标题容器的悬浮效果 - 显示/隐藏功能按钮
     titleContainer.addEventListener('mouseenter', () => {
       // 鼠标进入标题容器时显示功能按钮
@@ -8342,13 +9031,19 @@ const typeConfigs = [
       
       // 清空现有列表
       list.innerHTML = ''
-      
-      // 检查是否需要懒加载
-      if (filteredItems.length > this.LAZY_LOAD_THRESHOLD) {
-        renderItemsWithLazyLoading(list, filteredItems, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
+
+      // 检查是否需要分组显示
+      if (this.displayMode === 'grouped' && this.groupingConfig.mode !== 'none') {
+        // 分组显示
+        this.renderGroupedItems(list, filteredItems, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
       } else {
-        // 直接渲染所有项目
-        renderItems(list, filteredItems, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
+        // 检查是否需要懒加载
+        if (filteredItems.length > this.LAZY_LOAD_THRESHOLD) {
+          renderItemsWithLazyLoading(list, filteredItems, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
+        } else {
+          // 直接渲染所有项目
+          renderItems(list, filteredItems, searchInput, tagBlockIds, inlineRefIds, containedInBlockIds)
+        }
       }
     }
     
