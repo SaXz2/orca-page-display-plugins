@@ -1506,13 +1506,18 @@ export class PageDisplay {
   public async toggleTypeFilters(): Promise<void> {
     this.showTypeFilters = !this.showTypeFilters
     this.saveSettings()
-    
-    // 如果当前面板有显示，重新创建以应用新的过滤面板设置
-    const panelId = this.getCurrentPanelId()
-    const container = this.containers.get(panelId)
-    if (container) {
-      await this.updateDisplay()
-    }
+
+    // 注意：不在这里调用updateDisplay，由调用方决定何时更新
+    // 这样可以避免无限循环调用
+  }
+
+  /**
+   * 切换类型过滤面板显示状态（不保存设置）
+   * 用于在已经保存过设置的情况下只更新UI状态
+   */
+  public toggleTypeFiltersUI(): void {
+    this.showTypeFilters = !this.showTypeFilters
+    // 注意：不调用saveSettings，避免重复保存
   }
 
   /**
@@ -1531,7 +1536,23 @@ export class PageDisplay {
   public setTypeFilter(type: PageDisplayItemType, visible: boolean): void {
     this.typeFilters.set(type, visible)
     this.saveSettings()
-    
+
+    // 注意：不在这里调用updateDisplay，由调用方决定何时更新
+  }
+
+  /**
+   * 批量设置多个类型的显示状态
+   * @param updates 类型更新数组
+   */
+  public setMultipleTypeFilters(updates: { type: PageDisplayItemType, visible: boolean }[]): void {
+    // 批量更新状态
+    updates.forEach(({ type, visible }) => {
+      this.typeFilters.set(type, visible)
+    })
+
+    // 只保存一次设置
+    this.saveSettings()
+
     // 注意：不在这里调用updateDisplay，由调用方决定何时更新
   }
 
@@ -1582,13 +1603,18 @@ export class PageDisplay {
   public async toggleDateFilters(): Promise<void> {
     this.showDateFilters = !this.showDateFilters
     this.saveSettings()
-    
-    // 如果当前面板有显示，重新创建以应用新的过滤面板设置
-    const panelId = this.getCurrentPanelId()
-    const container = this.containers.get(panelId)
-    if (container) {
-      await this.updateDisplay()
-    }
+
+    // 注意：不在这里调用updateDisplay，由调用方决定何时更新
+    // 这样可以避免无限循环调用
+  }
+
+  /**
+   * 切换日期过滤面板显示状态（不保存设置）
+   * 用于在已经保存过设置的情况下只更新UI状态
+   */
+  public toggleDateFiltersUI(): void {
+    this.showDateFilters = !this.showDateFilters
+    // 注意：不调用saveSettings，避免重复保存
   }
 
   /**
@@ -1709,13 +1735,16 @@ export class PageDisplay {
     panel.className = 'page-display-type-filter-panel'
     this.applyStyles(panel, 'page-display-type-filter-panel')
     
+    // 获取当前页面的显示状态
+    const currentPageVisible = this.getCurrentPageTypeFilterState()
+
     // 设置初始显示状态和透明度过渡
     panel.style.cssText = `
-      display: ${this.showTypeFilters ? 'block' : 'none'};
-      opacity: ${this.showTypeFilters ? '1' : '0'};
-      visibility: ${this.showTypeFilters ? 'visible' : 'hidden'};
+      display: ${currentPageVisible ? 'block' : 'none'};
+      opacity: ${currentPageVisible ? '1' : '0'};
+      visibility: ${currentPageVisible ? 'visible' : 'hidden'};
       transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
-      transform: translateY(${this.showTypeFilters ? '0' : '-10px'});
+      transform: translateY(${currentPageVisible ? '0' : '-10px'});
     `
     
     // 创建面板标题和按钮容器
@@ -1820,26 +1849,39 @@ export class PageDisplay {
       confirmBtn.style.background = 'var(--orca-color-primary-5)'
     })
     confirmBtn.addEventListener('click', async () => {
-      // 应用所有复选框的状态
-      optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
-        const input = checkbox as HTMLInputElement
-        const type = input.id.replace('type-filter-', '') as PageDisplayItemType
-        this.setTypeFilter(type, input.checked)
-      })
-      
-      // 强制更新显示
-      await this.forceUpdate()
-      
-      // 隐藏面板 - 立即设置display为none，避免空白区域
-      this.toggleTypeFilters()
-      
-      // 延迟隐藏面板，确保forceUpdate完成后再隐藏
-      setTimeout(() => {
-        panel.style.display = 'none'
-        panel.style.opacity = '0'
-        panel.style.visibility = 'hidden'
-        panel.style.transform = 'translateY(-10px)'
-      }, 0)
+      // 防止重复点击
+      if (confirmBtn.disabled) return
+
+      // 禁用按钮防止重复点击
+      confirmBtn.disabled = true
+
+      try {
+        // 批量应用所有复选框的状态，避免重复保存
+        const updates: { type: PageDisplayItemType, visible: boolean }[] = []
+        optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+          const input = checkbox as HTMLInputElement
+          const type = input.id.replace('type-filter-', '') as PageDisplayItemType
+          updates.push({ type, visible: input.checked })
+        })
+
+        // 批量更新，只保存一次
+        this.setMultipleTypeFilters(updates)
+
+        // 更新页面状态并保存（这是必要的，用于状态持久化）
+        this.setCurrentPageTypeFilterState(false)
+
+        // 直接隐藏面板DOM，不依赖forceUpdate
+        const panelElement = (panel.closest('.page-display-container') as HTMLElement)?.querySelector('.page-display-type-filter-panel') as HTMLElement
+        if (panelElement) {
+          panelElement.style.display = 'none'
+          panelElement.style.opacity = '0'
+          panelElement.style.visibility = 'hidden'
+          panelElement.style.transform = 'translateY(-10px)'
+        }
+      } finally {
+        // 重新启用按钮
+        confirmBtn.disabled = false
+      }
     })
     
     const cancelBtn = document.createElement('button')
@@ -1865,18 +1907,35 @@ export class PageDisplay {
       cancelBtn.style.background = 'var(--orca-color-bg-2)'
     })
     cancelBtn.addEventListener('click', () => {
-      // 恢复原始状态
-      optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
-        const input = checkbox as HTMLInputElement
-        const type = input.id.replace('type-filter-', '') as PageDisplayItemType
-        input.checked = this.getTypeFilter(type)
-      })
-      // 隐藏面板 - 立即设置display为none，避免空白区域
-      this.toggleTypeFilters()
-      panel.style.display = 'none'
-      panel.style.opacity = '0'
-      panel.style.visibility = 'hidden'
-      panel.style.transform = 'translateY(-10px)'
+      // 防止重复点击
+      if (cancelBtn.disabled) return
+
+      // 禁用按钮防止重复点击
+      cancelBtn.disabled = true
+
+      try {
+        // 恢复原始状态
+        optionsContainer.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+          const input = checkbox as HTMLInputElement
+          const type = input.id.replace('type-filter-', '') as PageDisplayItemType
+          input.checked = this.getTypeFilter(type)
+        })
+
+        // 更新页面状态（不保存，因为只是恢复状态）
+        this.setCurrentPageTypeFilterStateUI(false)
+
+        // 直接隐藏面板DOM
+        const panelElement = (panel.closest('.page-display-container') as HTMLElement)?.querySelector('.page-display-type-filter-panel') as HTMLElement
+        if (panelElement) {
+          panelElement.style.display = 'none'
+          panelElement.style.opacity = '0'
+          panelElement.style.visibility = 'hidden'
+          panelElement.style.transform = 'translateY(-10px)'
+        }
+      } finally {
+        // 重新启用按钮
+        cancelBtn.disabled = false
+      }
     })
     
     titleButtons.appendChild(selectAllBtn)
@@ -2042,13 +2101,16 @@ const typeConfigs = [
     panel.className = 'page-display-date-filter-panel'
     this.applyStyles(panel, 'page-display-date-filter-panel')
     
+    // 获取当前页面的显示状态
+    const currentPageVisible = this.getCurrentPageDateFilterState()
+
     // 设置初始显示状态和透明度过渡，使用虎鲸笔记原生样式变量
     panel.style.cssText = `
-      display: ${this.showDateFilters ? 'block' : 'none'};
-      opacity: ${this.showDateFilters ? '1' : '0'};
-      visibility: ${this.showDateFilters ? 'visible' : 'hidden'};
+      display: ${currentPageVisible ? 'block' : 'none'};
+      opacity: ${currentPageVisible ? '1' : '0'};
+      visibility: ${currentPageVisible ? 'visible' : 'hidden'};
       transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
-      transform: translateY(${this.showDateFilters ? '0' : '-10px'});
+      transform: translateY(${currentPageVisible ? '0' : '-10px'});
       background: var(--orca-color-bg-1);
       border: var(--orca-border-general);
       border-radius: var(--orca-radius-lg);
@@ -2134,8 +2196,16 @@ const typeConfigs = [
         dateField: 'created'
       }
       this.saveSettings()
-      await this.forceUpdate()
-      this.toggleDateFilters()
+      this.setCurrentPageDateFilterState(false) // 保存状态
+
+      // 直接隐藏面板DOM
+      const panelElement = clearBtn.closest('.page-display-container')?.querySelector('.page-display-date-filter-panel') as HTMLElement
+      if (panelElement) {
+        panelElement.style.display = 'none'
+        panelElement.style.opacity = '0'
+        panelElement.style.visibility = 'hidden'
+        panelElement.style.transform = 'translateY(-10px)'
+      }
     })
     
     const confirmBtn = document.createElement('button')
@@ -2165,9 +2235,54 @@ const typeConfigs = [
       confirmBtn.style.borderColor = 'var(--orca-color-success-5)'
     })
     confirmBtn.addEventListener('click', async () => {
-      // 应用日期过滤设置
-      await this.forceUpdate()
-      this.toggleDateFilters()
+      // 防止重复点击
+      if (confirmBtn.disabled) return
+
+      // 禁用按钮防止重复点击
+      confirmBtn.disabled = true
+
+      try {
+        // 收集面板设置并应用
+        const enableCheckbox = panel.querySelector('#date-filter-enable') as HTMLInputElement
+        const dateFieldSelect = panel.querySelector('#date-filter-field') as HTMLSelectElement
+        const relativeDateSelect = panel.querySelector('#date-filter-relative') as HTMLSelectElement
+        const startDateInput = panel.querySelector('#date-filter-start') as HTMLInputElement
+        const endDateInput = panel.querySelector('#date-filter-end') as HTMLInputElement
+
+        if (enableCheckbox) {
+          this.dateFilterConfig.enabled = enableCheckbox.checked
+        }
+        if (dateFieldSelect) {
+          this.dateFilterConfig.dateField = dateFieldSelect.value as 'created' | 'modified'
+        }
+        if (relativeDateSelect) {
+          this.dateFilterConfig.relativeDate = relativeDateSelect.value as any || undefined
+        }
+        if (startDateInput) {
+          this.dateFilterConfig.startDate = startDateInput.value ? new Date(startDateInput.value) : undefined
+        }
+        if (endDateInput) {
+          this.dateFilterConfig.endDate = endDateInput.value ? new Date(endDateInput.value) : undefined
+        }
+
+        // 保存设置
+        this.saveSettings()
+
+        // 更新页面状态并保存（确保状态持久化）
+        this.setCurrentPageDateFilterState(false)
+
+        // 直接隐藏面板DOM
+        const panelElement = (panel.closest('.page-display-container') as HTMLElement)?.querySelector('.page-display-date-filter-panel') as HTMLElement
+        if (panelElement) {
+          panelElement.style.display = 'none'
+          panelElement.style.opacity = '0'
+          panelElement.style.visibility = 'hidden'
+          panelElement.style.transform = 'translateY(-10px)'
+        }
+      } finally {
+        // 重新启用按钮
+        confirmBtn.disabled = false
+      }
     })
     
     const cancelBtn = document.createElement('button')
@@ -2197,8 +2312,55 @@ const typeConfigs = [
       cancelBtn.style.borderColor = 'var(--orca-color-dangerous-5)'
     })
     cancelBtn.addEventListener('click', () => {
-      // 隐藏面板
-      this.toggleDateFilters()
+      // 防止重复点击
+      if (cancelBtn.disabled) return
+
+      // 禁用按钮防止重复点击
+      cancelBtn.disabled = true
+
+      try {
+        // 恢复面板状态到当前设置
+        const enableCheckbox = panel.querySelector('#date-filter-enable') as HTMLInputElement
+        const dateFieldSelect = panel.querySelector('#date-filter-field') as HTMLSelectElement
+        const relativeDateSelect = panel.querySelector('#date-filter-relative') as HTMLSelectElement
+        const startDateInput = panel.querySelector('#date-filter-start') as HTMLInputElement
+        const endDateInput = panel.querySelector('#date-filter-end') as HTMLInputElement
+
+        if (enableCheckbox) {
+          enableCheckbox.checked = this.dateFilterConfig.enabled
+        }
+        if (dateFieldSelect) {
+          dateFieldSelect.value = this.dateFilterConfig.dateField
+        }
+        if (relativeDateSelect) {
+          relativeDateSelect.value = this.dateFilterConfig.relativeDate || ''
+        }
+        if (startDateInput) {
+          startDateInput.value = this.dateFilterConfig.startDate
+            ? this.dateFilterConfig.startDate.toISOString().split('T')[0]
+            : ''
+        }
+        if (endDateInput) {
+          endDateInput.value = this.dateFilterConfig.endDate
+            ? this.dateFilterConfig.endDate.toISOString().split('T')[0]
+            : ''
+        }
+
+        // 更新页面状态（不保存，因为只是恢复状态）
+        this.setCurrentPageDateFilterStateUI(false)
+
+        // 直接隐藏面板DOM
+        const panelElement = (panel.closest('.page-display-container') as HTMLElement)?.querySelector('.page-display-date-filter-panel') as HTMLElement
+        if (panelElement) {
+          panelElement.style.display = 'none'
+          panelElement.style.opacity = '0'
+          panelElement.style.visibility = 'hidden'
+          panelElement.style.transform = 'translateY(-10px)'
+        }
+      } finally {
+        // 重新启用按钮
+        cancelBtn.disabled = false
+      }
     })
     
     titleButtons.appendChild(clearBtn)
@@ -3954,9 +4116,9 @@ const typeConfigs = [
     // 清除所有临时折叠状态，让所有页面使用新的默认设置
     this.temporaryCollapsedStates.clear()
 
-    // 强制更新所有显示的面板
-    console.log("PageDisplay: 调用 forceUpdate")
-    this.forceUpdate()
+    // 注意：不在这里调用forceUpdate，让状态监听器处理更新
+    // 这样可以避免无限循环调用
+    console.log("PageDisplay: setDefaultCollapsed 完成，等待状态监听器更新显示")
   }
 
   /**
@@ -3983,6 +4145,18 @@ const typeConfigs = [
   }
 
   /**
+   * 设置当前页面的类型过滤面板显示状态（不保存）
+   * @param visible 是否显示
+   */
+  private setCurrentPageTypeFilterStateUI(visible: boolean): void {
+    const rootBlockId = this.getCurrentRootBlockId()
+    if (rootBlockId) {
+      this.pageTypeFilterStates.set(rootBlockId, visible)
+      // 不调用saveSettings，避免重复保存
+    }
+  }
+
+  /**
    * 获取当前页面的日期过滤面板显示状态
    * @returns 是否显示日期过滤面板
    */
@@ -4002,6 +4176,18 @@ const typeConfigs = [
     if (rootBlockId) {
       this.pageDateFilterStates.set(rootBlockId, visible)
       this.saveSettings()
+    }
+  }
+
+  /**
+   * 设置当前页面的日期过滤面板显示状态（不保存）
+   * @param visible 是否显示
+   */
+  private setCurrentPageDateFilterStateUI(visible: boolean): void {
+    const rootBlockId = this.getCurrentRootBlockId()
+    if (rootBlockId) {
+      this.pageDateFilterStates.set(rootBlockId, visible)
+      // 不调用saveSettings，避免重复保存
     }
   }
 
@@ -7512,21 +7698,21 @@ const typeConfigs = [
     filterIcon.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
-      
+
       // 添加点击反馈
       filterIcon.style.transform = 'scale(0.95)'
       setTimeout(() => {
         filterIcon.style.transform = 'scale(1)'
       }, 100)
-      
+
       if (rootBlockId) {
         const currentVisible = this.getCurrentPageTypeFilterState()
-        this.setCurrentPageTypeFilterState(!currentVisible)
-        
+        this.setCurrentPageTypeFilterStateUI(!currentVisible) // 使用UI版本，不保存
+
         if (!currentVisible) {
           // 隐藏其他面板
           hideOtherPanels('typeFilter')
-          
+
           // 显示面板 - 使用透明度过渡
           typeFilterPanel.style.display = 'block'
           // 强制重排以确保初始状态正确
@@ -7534,7 +7720,7 @@ const typeConfigs = [
           typeFilterPanel.style.opacity = '1'
           typeFilterPanel.style.visibility = 'visible'
           typeFilterPanel.style.transform = 'translateY(0)'
-          
+
           // 更新复选框状态
           this.updateTypeFilterPanelCheckboxes(typeFilterPanel)
         } else {
@@ -7560,8 +7746,8 @@ const typeConfigs = [
       
       if (rootBlockId) {
         const currentVisible = this.getCurrentPageDateFilterState()
-        this.setCurrentPageDateFilterState(!currentVisible)
-        
+        this.setCurrentPageDateFilterStateUI(!currentVisible) // 使用UI版本，不保存
+
         if (!currentVisible) {
           // 隐藏其他面板
           hideOtherPanels('dateFilter')
@@ -7939,10 +8125,10 @@ const typeConfigs = [
           typeFilterPanel.style.opacity = '0'
           typeFilterPanel.style.visibility = 'hidden'
           typeFilterPanel.style.transform = 'translateY(-10px)'
-          this.setCurrentPageTypeFilterState(false)
+          this.setCurrentPageTypeFilterStateUI(false) // 使用UI版本，不保存
         }
       }
-      
+
       if (currentPanel !== 'dateFilter') {
         // 隐藏日期过滤面板
         if (rootBlockId && this.getCurrentPageDateFilterState()) {
@@ -7950,7 +8136,7 @@ const typeConfigs = [
           dateFilterPanel.style.opacity = '0'
           dateFilterPanel.style.visibility = 'hidden'
           dateFilterPanel.style.transform = 'translateY(-10px)'
-          this.setCurrentPageDateFilterState(false)
+          this.setCurrentPageDateFilterStateUI(false) // 使用UI版本，不保存
         }
       }
     }
@@ -9666,49 +9852,133 @@ const typeConfigs = [
     levelDistribution: Record<number, number>
     maxLevel: number
   }): void {
-    // 创建详细信息弹窗
+    // 创建现代化详细信息弹窗
     const details = document.createElement('div')
     details.style.cssText = `
       position: fixed;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: var(--orca-color-bg-1);
-      border: var(--orca-border-general);
-      border-radius: var(--orca-radius-lg);
-      box-shadow: var(--orca-shadow-popup);
-      padding: var(--orca-spacing-lg);
-      z-index: var(--orca-zindex-modal);
-      max-width: 400px;
-      max-height: 300px;
-      overflow-y: auto;
-      font-family: var(--orca-fontfamily-ui);
+      background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 20px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25),
+                  0 0 0 1px rgba(59, 130, 246, 0.1),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      padding: 32px;
+      z-index: 9999;
+      min-width: 600px;
+      max-width: 800px;
+      max-height: 90vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      backdrop-filter: blur(10px);
+      animation: modalSlideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     `
+
+    // 添加动画样式
+    const style = document.createElement('style')
+    style.textContent = `
+      @keyframes modalSlideIn {
+        from {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.9);
+        }
+        to {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+      }
+
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    `
+    document.head.appendChild(style)
 
     // 创建标题
     const title = document.createElement('div')
-    title.textContent = '层级结构详情'
+    title.textContent = '📊 层级结构详情'
     title.style.cssText = `
-      font-size: var(--orca-fontsize-md);
-      font-weight: var(--orca-fontweight-lg);
-      color: var(--orca-color-text-1);
-      margin-bottom: var(--orca-spacing-md);
-      border-bottom: var(--orca-border-general);
-      padding-bottom: var(--orca-spacing-sm);
+      font-size: 20px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 20px;
+      text-align: center;
+      letter-spacing: -0.5px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
     `
 
-    // 创建层级分布信息
+    // 创建统计信息卡片
+    const statsContainer = document.createElement('div')
+    statsContainer.style.cssText = `
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    `
+
+    // 总层数卡片
+    const totalLevelsCard = document.createElement('div')
+    totalLevelsCard.style.cssText = `
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      backdrop-filter: blur(10px);
+      animation: fadeInUp 0.4s ease-out;
+    `
+    totalLevelsCard.innerHTML = `
+      <div style="font-size: 14px; color: #94a3b8; margin-bottom: 8px; font-weight: 500;">总层数</div>
+      <div style="font-size: 32px; font-weight: 800; color: #60a5fa; text-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);">${stats.totalLevels}</div>
+    `
+
+    // 总项目卡片
+    const totalItemsCard = document.createElement('div')
+    totalItemsCard.style.cssText = `
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      backdrop-filter: blur(10px);
+      animation: fadeInUp 0.4s ease-out 0.1s;
+    `
+    totalItemsCard.innerHTML = `
+      <div style="font-size: 14px; color: #94a3b8; margin-bottom: 8px; font-weight: 500;">总项目</div>
+      <div style="font-size: 32px; font-weight: 800; color: #10b981; text-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);">${stats.totalItems}</div>
+    `
+
+    statsContainer.appendChild(totalLevelsCard)
+    statsContainer.appendChild(totalItemsCard)
+
+    // 创建层级列表标题
+    const listTitle = document.createElement('div')
+    listTitle.textContent = '📈 层级分布'
+    listTitle.style.cssText = `
+      font-size: 16px;
+      font-weight: 600;
+      color: #e2e8f0;
+      margin-bottom: 16px;
+      letter-spacing: -0.2px;
+    `
+
+    // 创建层级分布容器
     const levelInfo = document.createElement('div')
-    levelInfo.innerHTML = `
-      <div style="margin-bottom: var(--orca-spacing-sm);">
-        <strong>总层数:</strong> ${stats.totalLevels}
-      </div>
-      <div style="margin-bottom: var(--orca-spacing-sm);">
-        <strong>总项目:</strong> ${stats.totalItems}
-      </div>
-      <div style="margin-bottom: var(--orca-spacing-sm);">
-        <strong>层级分布:</strong>
-      </div>
+    levelInfo.style.cssText = `
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      border-radius: 16px;
+      padding: 8px;
+      backdrop-filter: blur(10px);
+      animation: fadeInUp 0.4s ease-out 0.2s;
     `
 
     // 添加每层的详细信息
@@ -9718,42 +9988,87 @@ const typeConfigs = [
       levelDiv.style.cssText = `
         display: flex;
         justify-content: space-between;
-        padding: var(--orca-spacing-xs) var(--orca-spacing-sm);
-        background: var(--orca-color-bg-2);
-        border-radius: var(--orca-radius-sm);
-        margin-bottom: var(--orca-spacing-xs);
-        font-size: var(--orca-fontsize-sm);
+        align-items: center;
+        padding: 16px 20px;
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 12px;
+        margin-bottom: 8px;
+        font-size: 14px;
+        border: 1px solid rgba(59, 130, 246, 0.15);
+        transition: all 0.2s ease;
       `
       levelDiv.innerHTML = `
-        <span>第 ${level} 层</span>
-        <span style="color: var(--orca-color-primary-3); font-weight: var(--orca-fontweight-lg);">${count} 项</span>
+        <span style="color: #cbd5e1; display: flex; align-items: center; gap: 12px;">
+          <span style="background: rgba(59, 130, 246, 0.25); color: #60a5fa; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;">L${level}</span>
+          第 ${level} 层
+        </span>
+        <span style="color: #f1f5f9; font-weight: 700; background: rgba(59, 130, 246, 0.2); padding: 6px 12px; border-radius: 8px; font-size: 14px; min-width: 60px; text-align: center;">${count} 项</span>
       `
+
+      // 添加悬停效果
+      levelDiv.addEventListener('mouseenter', () => {
+        levelDiv.style.background = 'rgba(59, 130, 246, 0.1)'
+        levelDiv.style.borderColor = 'rgba(59, 130, 246, 0.3)'
+        levelDiv.style.transform = 'translateX(4px)'
+      })
+
+      levelDiv.addEventListener('mouseleave', () => {
+        levelDiv.style.background = 'rgba(30, 41, 59, 0.8)'
+        levelDiv.style.borderColor = 'rgba(59, 130, 246, 0.1)'
+        levelDiv.style.transform = 'translateX(0)'
+      })
+
       levelInfo.appendChild(levelDiv)
     }
 
-    // 创建关闭按钮
+    // 创建现代化关闭按钮
     const closeButton = document.createElement('button')
-    closeButton.textContent = '关闭'
+    closeButton.textContent = '✕ 关闭弹窗'
     closeButton.style.cssText = `
       width: 100%;
-      padding: var(--orca-spacing-sm);
-      margin-top: var(--orca-spacing-md);
-      background: var(--orca-color-primary-3);
-      color: var(--orca-color-primary-5);
-      border: none;
-      border-radius: var(--orca-radius-sm);
+      padding: 16px;
+      margin-top: 28px;
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      color: white;
+      border: 1px solid rgba(59, 130, 246, 0.5);
+      border-radius: 12px;
       cursor: pointer;
-      font-family: var(--orca-fontfamily-ui);
-      font-size: var(--orca-fontsize-sm);
-      font-weight: var(--orca-fontweight-md);
+      font-size: 16px;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      animation: fadeInUp 0.4s ease-out 0.3s;
     `
 
+    closeButton.addEventListener('mouseenter', () => {
+      closeButton.style.background = 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)'
+      closeButton.style.transform = 'translateY(-1px)'
+      closeButton.style.boxShadow = '0 8px 12px -1px rgba(0, 0, 0, 0.2)'
+    })
+
+    closeButton.addEventListener('mouseleave', () => {
+      closeButton.style.background = 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
+      closeButton.style.transform = 'translateY(0)'
+      closeButton.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+    })
+
     closeButton.addEventListener('click', () => {
-      document.body.removeChild(details)
+      details.style.animation = 'modalSlideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1) reverse'
+      setTimeout(() => {
+        if (details.parentNode) {
+          document.body.removeChild(details)
+        }
+        if (style.parentNode) {
+          document.head.removeChild(style)
+        }
+      }, 300)
     })
 
     // 组装弹窗
     details.appendChild(title)
+    details.appendChild(statsContainer)
+    details.appendChild(listTitle)
     details.appendChild(levelInfo)
     details.appendChild(closeButton)
 
