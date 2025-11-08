@@ -7779,7 +7779,8 @@ const typeConfigs = [
       this.setCurrentPageCollapseState(newCollapsed)
       
       if (newCollapsed) {
-        // 折叠：平滑隐藏列表
+        // 折叠：平滑隐藏列表，添加过渡避免抖动
+        list.style.transition = 'opacity 0.2s ease, max-height 0.2s ease'
         list.style.opacity = '0'
         list.style.maxHeight = '0'
         arrow.innerHTML = '<i class="ti ti-chevron-right"></i>' // 折叠时箭头向右
@@ -7811,8 +7812,12 @@ const typeConfigs = [
         // 延迟设置display为none，确保过渡完成（除了功能按钮容器）
         setTimeout(() => {
           if (this.getCurrentPageCollapseState()) {
+            // 移除过渡，准备设置display none
+            list.style.transition = 'none'
             list.style.display = 'none'
+
             if (isSearchVisible) {
+              searchContainer.style.transition = 'none'
               searchContainer.style.display = 'none'
             }
             // 功能按钮容器不设置display none，避免裁切问题
@@ -7826,7 +7831,7 @@ const typeConfigs = [
             }
           }
           isTransitioning = false
-        }, 100)
+        }, 200) // 延长等待时间确保maxHeight动画完全完成
       } else {
         // 展开：显示列表
         // 根据多列设置决定display样式
@@ -7843,6 +7848,7 @@ const typeConfigs = [
         // 强制重排以触发过渡
         list.offsetHeight
 
+        list.style.transition = 'opacity 0.2s ease, max-height 0.2s ease'
         list.style.opacity = '1'
         list.style.maxHeight = '1000px'
         arrow.innerHTML = '<i class="ti ti-chevron-down"></i>' // 展开时箭头向下
