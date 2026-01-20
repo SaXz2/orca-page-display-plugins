@@ -10119,325 +10119,43 @@ const typeConfigs = [
     breadcrumbContainer.className = 'page-display-breadcrumb-container'
     this.applyStyles(breadcrumbContainer, 'page-display-breadcrumb-container')
 
-    // 创建面包屑层级元素
-    const breadcrumbLevel = document.createElement('div')
-    breadcrumbLevel.className = 'page-display-breadcrumb-level'
-    this.applyStyles(breadcrumbLevel, 'page-display-breadcrumb-level')
-    
     // 根据模式设置样式
     if (this.breadcrumbMode === 'multi-line') {
-      breadcrumbLevel.style.whiteSpace = 'normal'
-      breadcrumbLevel.style.overflow = 'visible'
+      breadcrumbContainer.style.whiteSpace = 'normal'
+      breadcrumbContainer.style.overflow = 'visible'
     } else {
-      breadcrumbLevel.style.whiteSpace = 'nowrap'
-      breadcrumbLevel.style.overflow = 'hidden'
+      breadcrumbContainer.style.whiteSpace = 'nowrap'
+      breadcrumbContainer.style.overflow = 'hidden'
     }
 
-    // 先尝试同步获取面包屑文本（作为快速显示）
-    const breadcrumbText = this.getBreadcrumbTextForItem(item)
-    if (breadcrumbText) {
-      breadcrumbLevel.textContent = breadcrumbText
-      breadcrumbLevel.style.opacity = '0.8' // 稍微透明，表示可能不完整
-      breadcrumbContainer.appendChild(breadcrumbLevel)
-      
-      // 即使有同步结果，也尝试异步更新以获得更完整的信息
-      this.loadBreadcrumbAsync(item, breadcrumbLevel)
-      return breadcrumbContainer
-    }
-
-    // 如果没有同步获取到，显示加载状态并异步获取
-    breadcrumbLevel.textContent = '加载中...'
-    breadcrumbLevel.style.opacity = '0.6'
-    breadcrumbContainer.appendChild(breadcrumbLevel)
-
-    // 异步获取面包屑
-    this.loadBreadcrumbAsync(item, breadcrumbLevel)
+    // 使用 React 渲染内置的 BlockBreadcrumb 组件
+    this.renderBreadcrumbComponent(item, breadcrumbContainer)
 
     return breadcrumbContainer
   }
 
-
   /**
-   * 异步加载面包屑
+   * 使用 React 渲染面包屑组件
    * @param item 页面显示项目
-   * @param breadcrumbLevel 面包屑元素
+   * @param container 容器元素
    */
-  private async loadBreadcrumbAsync(item: PageDisplayItem, breadcrumbLevel: HTMLElement): Promise<void> {
-    try {
-      this.log("PageDisplay: Loading breadcrumb asynchronously for item", { itemId: item.id })
-      
-      // 获取当前块信息
-      const block = await this.cachedApiCall("get-block", item.id)
-      if (!block || !block.parent) {
-        // 没有父级，隐藏面包屑容器
-        this.hideBreadcrumbContainer(breadcrumbLevel)
-        return
-      }
+  private renderBreadcrumbComponent(item: PageDisplayItem, container: HTMLElement): void {
+    const React = window.React
+    const BlockBreadcrumb = orca.components.BlockBreadcrumb
 
-      // 异步构建面包屑路径
-      const breadcrumbPath = await this.buildBreadcrumbPathAsync(block.parent)
-      
-      if (breadcrumbPath && breadcrumbPath.length > 0) {
-        // 创建交互式面包屑
-        this.createInteractiveBreadcrumb(breadcrumbLevel, breadcrumbPath)
-        breadcrumbLevel.style.opacity = '1'
-      } else {
-        // 没有面包屑路径，隐藏面包屑容器
-        this.hideBreadcrumbContainer(breadcrumbLevel)
-      }
-    } catch (error) {
-      this.log("PageDisplay: Error loading breadcrumb", error)
-      // 加载失败，隐藏面包屑容器
-      this.hideBreadcrumbContainer(breadcrumbLevel)
-    }
-  }
-
-  /**
-   * 创建交互式面包屑
-   * @param breadcrumbLevel 面包屑元素
-   * @param breadcrumbPath 面包屑路径数组
-   */
-  private createInteractiveBreadcrumb(breadcrumbLevel: HTMLElement, breadcrumbPath: Array<{id: DbId, text: string}>): void {
-    // 清空原有内容
-    breadcrumbLevel.innerHTML = ''
-    
-    breadcrumbPath.forEach((item, index) => {
-      // 创建层级元素
-      const levelElement = document.createElement('span')
-      levelElement.className = 'page-display-breadcrumb-level-item'
-      
-      // 限制面包屑项的最大长度
-      const maxLength = 20
-      const displayText = item.text.length > maxLength 
-        ? item.text.substring(0, maxLength) + '...' 
-        : item.text
-      
-      levelElement.textContent = displayText
-      levelElement.setAttribute('data-block-id', item.id.toString())
-      
-      // 如果文本被截断，添加完整文本的 title 提示
-      if (item.text.length > maxLength) {
-        levelElement.title = item.text
-      }
-      
-      // 添加点击事件
-      levelElement.addEventListener('click', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        this.log("PageDisplay: Breadcrumb level clicked", { blockId: item.id, text: item.text })
-        
-        // 检查是否按下了Shift键
-        if (e.shiftKey) {
-          // Shift+点击：在侧面板打开
-          this.openBlockInSidePanel(item.id)
-        } else {
-          // 普通点击：在当前面板打开
-          this.openBlock(item.id)
+    // 创建 React 根节点并渲染组件
+    const root = window.createRoot(container)
+    root.render(
+      React.createElement(BlockBreadcrumb, {
+        blockId: item.id,
+        className: 'page-display-breadcrumb-level',
+        style: {
+          fontSize: '0.9em',
+          color: 'var(--orca-color-text-2)',
+          padding: '4px 0'
         }
       })
-      
-      // 添加悬停效果
-      levelElement.addEventListener('mouseenter', () => {
-        levelElement.style.backgroundColor = 'var(--orca-color-bg-2)'
-        levelElement.style.cursor = 'pointer'
-      })
-      
-      levelElement.addEventListener('mouseleave', () => {
-        levelElement.style.backgroundColor = 'transparent'
-      })
-      
-      breadcrumbLevel.appendChild(levelElement)
-      
-      // 添加分隔符（除了最后一个）
-      if (index < breadcrumbPath.length - 1) {
-        const separator = document.createElement('span')
-        separator.className = 'page-display-breadcrumb-separator'
-        separator.textContent = ' › '
-        separator.style.color = 'var(--orca-color-text-3)'
-        separator.style.margin = '0 4px'
-        breadcrumbLevel.appendChild(separator)
-      }
-    })
-  }
-
-  /**
-   * 隐藏面包屑容器
-   * @param breadcrumbLevel 面包屑元素
-   */
-  private hideBreadcrumbContainer(breadcrumbLevel: HTMLElement): void {
-    const breadcrumbContainer = breadcrumbLevel.parentElement
-    if (breadcrumbContainer && breadcrumbContainer.classList.contains('page-display-breadcrumb-container')) {
-      // 隐藏整个面包屑容器
-      breadcrumbContainer.style.display = 'none'
-    }
-  }
-
-  /**
-   * 异步构建面包屑路径
-   * @param parentId 父块ID
-   * @returns 面包屑路径数组，包含块ID和显示文本
-   */
-  private async buildBreadcrumbPathAsync(parentId: DbId): Promise<Array<{id: DbId, text: string}>> {
-    const path: Array<{id: DbId, text: string}> = []
-    let currentId = parentId
-    const visited = new Set<DbId>() // 防止循环引用
-
-    while (currentId && !visited.has(currentId)) {
-      visited.add(currentId)
-      
-      try {
-        // 通过API获取块信息
-        const currentBlock = await this.cachedApiCall("get-block", currentId)
-        if (!currentBlock) {
-          this.log("PageDisplay: Block not found via API", { blockId: currentId })
-          break
-        }
-
-        // 获取当前块的显示文本
-        let blockText = (currentBlock.aliases && currentBlock.aliases[0]) || currentBlock.text || `块 ${currentBlock.id}`
-        
-        // 格式化日期（如果是日期块）
-        if (this.isDateBlock(currentBlock)) {
-          blockText = this.formatDateBlock(currentBlock, blockText)
-        }
-
-        // 将当前块信息添加到路径开头
-        path.unshift({ id: currentId, text: blockText })
-
-        // 获取父块ID
-        if (currentBlock.parent) {
-          currentId = currentBlock.parent
-        } else {
-          break
-        }
-      } catch (error) {
-        this.log("PageDisplay: Error fetching block", { blockId: currentId, error })
-        break
-      }
-    }
-
-    return path
-  }
-
-  /**
-   * 为条目获取面包屑文本
-   * @param item 页面显示项目
-   * @returns 面包屑文本或null
-   */
-  private getBreadcrumbTextForItem(item: PageDisplayItem): string | null {
-    // 首先尝试使用已有的parentBlock
-    if (item.parentBlock) {
-      return this.getParentBreadcrumbText(item.parentBlock)
-    }
-
-    // 如果没有parentBlock，尝试从全局状态获取块信息
-    const block = orca.state.blocks[item.id]
-    if (block && block.parent) {
-      // 尝试从全局状态获取父块
-      const parentBlock = orca.state.blocks[block.parent]
-      if (parentBlock) {
-        return this.getParentBreadcrumbText(parentBlock)
-      } else {
-        // 如果父块不在状态中，尝试直接构建面包屑路径
-        this.log("PageDisplay: Building breadcrumb for item without parent in state", {
-          itemId: item.id,
-          parentId: block.parent
-        })
-        return this.buildBreadcrumbFromParentId(block.parent)
-      }
-    }
-
-    return null
-  }
-
-  /**
-   * 从父块ID构建面包屑路径
-   * @param parentId 父块ID
-   * @returns 面包屑文本或null
-   */
-  private buildBreadcrumbFromParentId(parentId: DbId): string | null {
-    const path: string[] = []
-    let currentId = parentId
-    const visited = new Set<DbId>() // 防止循环引用
-
-    while (currentId && !visited.has(currentId)) {
-      visited.add(currentId)
-      
-      const currentBlock = orca.state.blocks[currentId]
-      if (!currentBlock) {
-        // 如果块不在状态中，尝试获取
-        this.log("PageDisplay: Block not in state, attempting to fetch", { blockId: currentId })
-        break
-      }
-
-      // 获取当前块的显示文本
-      let blockText = (currentBlock.aliases && currentBlock.aliases[0]) || currentBlock.text || `块 ${currentBlock.id}`
-      
-      // 格式化日期（如果是日期块）
-      if (this.isDateBlock(currentBlock)) {
-        blockText = this.formatDateBlock(currentBlock, blockText)
-      }
-
-      // 将当前块文本添加到路径开头
-      path.unshift(blockText)
-
-      // 获取父块ID
-      if (currentBlock.parent) {
-        currentId = currentBlock.parent
-      } else {
-        break
-      }
-    }
-
-    return path.length > 0 ? path.join(' › ') : null
-  }
-
-  /**
-   * 获取父块的面包屑文本
-   * @param parentBlock 父块对象
-   * @returns 面包屑文本
-   */
-  private getParentBreadcrumbText(parentBlock: Block): string {
-    if (!parentBlock) {
-      return ''
-    }
-
-    // 递归获取完整的面包屑路径
-    const breadcrumbPath = this.getBreadcrumbPath(parentBlock)
-    return breadcrumbPath.join(' › ')
-  }
-
-  /**
-   * 递归获取面包屑路径
-   * @param block 当前块
-   * @returns 面包屑路径数组
-   */
-  private getBreadcrumbPath(block: Block): string[] {
-    const path: string[] = []
-    let currentBlock = block
-
-    while (currentBlock) {
-      // 获取当前块的显示文本
-      let blockText = (currentBlock.aliases && currentBlock.aliases[0]) || currentBlock.text || `块 ${currentBlock.id}`
-      
-      // 格式化日期（如果是日期块）
-      if (this.isDateBlock(currentBlock)) {
-        blockText = this.formatDateBlock(currentBlock, blockText)
-      }
-
-      // 将当前块文本添加到路径开头
-      path.unshift(blockText)
-
-      // 获取父块
-      const parentBlock = this.getParentBlock(currentBlock)
-      if (!parentBlock) {
-        break
-      }
-
-      currentBlock = parentBlock
-    }
-
-    return path
+    )
   }
 
   /**

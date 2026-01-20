@@ -14,7 +14,7 @@
 
 Types used for properties.
 
-#### Type declaration
+#### Type Declaration
 
 ##### BlockRefs
 
@@ -52,11 +52,15 @@ Types used for properties.
 
 Types used for references.
 
-#### Type declaration
+#### Type Declaration
 
 ##### Inline
 
 > `readonly` **Inline**: `1` = `1`
+
+##### Media
+
+> `readonly` **Media**: `4` = `4`
 
 ##### Property
 
@@ -65,7 +69,3 @@ Types used for references.
 ##### RefData
 
 > `readonly` **RefData**: `3` = `3`
-
-##### Whiteboard
-
-> `readonly` **Whiteboard**: `4` = `4`
