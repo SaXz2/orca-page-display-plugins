@@ -13,7 +13,7 @@
 ```
 orca/
 └── plugins/
-    └── orca-tabs-plugin-1.0.0/
+    └── orca-page-display-plugin-1.2.2/
         ├── dist/
         ├── icon.svg
         ├── LICENSE
