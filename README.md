@@ -13,7 +13,7 @@
 ```
 orca/
 └── plugins/
-    └── orca-page-display-plugin-1.2.2/
+    └── orca-page-display-plugin-1.3.0/
         ├── dist/
         ├── icon.svg
         ├── LICENSE
