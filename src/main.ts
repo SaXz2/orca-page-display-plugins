@@ -1,11 +1,14 @@
 import { setupL10N, t } from "./libs/l10n";
 import zhCN from "./translations/zhCN";
 import { PageDisplay } from "./PageDisplay";
+import { domLifecycle } from "./utils/domLifecycle";
 
 let pluginName: string;
 let pageDisplay: PageDisplay | null = null;
 
 export async function load(_name: string) {
+  // 接管 document / window 监听：自动去重 + 卸载时统一摘除
+  domLifecycle.install();
   console.log("PageDisplay Plugin: 开始加载插件", _name);
   
   pluginName = _name;
@@ -203,6 +206,9 @@ export async function load(_name: string) {
 }
 
 export async function unload() {
+  // 统一回收所有观察者与 document/window 监听
+  domLifecycle.releaseAll();
+
   // 移除CSS样式文件
   try {
     orca.themes.removeCSSResources(pluginName)

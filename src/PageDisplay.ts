@@ -1,5 +1,6 @@
 import type { Block, DbId, BlockRef, QueryDescription2 } from "./orca.d.ts"
 import pinyinMatch from 'pinyin-match'
+import { domLifecycle, panelsContainer, isPanelish, type DomWatch } from './utils/domLifecycle'
 
 /**
  * 标签信息接口
@@ -803,8 +804,10 @@ export class PageDisplay {
   private settingsReady: Promise<void>
   /** DOM变化观察器，用于监听页面变化 */
   private observer: MutationObserver | null = null
+  private pageSwitchWatch: DomWatch | null = null
   /** 标签层级观察器 */
   private tagHierarchyObserver: MutationObserver | null = null
+  private tagHierarchyWatch: DomWatch | null = null
   /** 样式管理器 */
   private styleManager: StyleManager
   /** 日志管理器 */
@@ -4343,6 +4346,10 @@ const typeConfigs = [
    * 断开观察器、清理定时器、移除DOM元素
    */
   public destroy() {
+    // 统一回收 domLifecycle 观察者与全局监听
+    try {
+      domLifecycle.releaseAll()
+    } catch {}
     // 断开DOM观察器
     if (this.observer) {
       this.observer.disconnect()
@@ -4392,8 +4399,23 @@ const typeConfigs = [
       this.observer.disconnect()
     }
 
-    // 使用MutationObserver监听页面切换
-    this.observer = new MutationObserver((mutations) => {
+    // 用 domLifecycle 观察页面切换：
+    //  - 目标交给解析函数，面板重建后自动重挂（原实现观察到的是一次性快照元素）
+    //  - 找不到活动面板时退到面板容器，不再整篇 body 全量观察
+    //  - 记录按帧合并、卸载时统一回收
+    this.pageSwitchWatch = domLifecycle.watch({
+      name: 'pagedisplay.pageswitch',
+      resolve: () =>
+        document.querySelector('#main .orca-panel.active > div:nth-child(3)') ||
+        panelsContainer(),
+      options: {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'id'],
+      },
+      filter: (mutation) => isPanelish(mutation.target),
+      handler: (mutations) => {
       // 检查是否有页面切换相关的变化
       const hasPageSwitch = mutations.some(mutation => {
         if (mutation.type === 'childList') {
@@ -4426,28 +4448,9 @@ const typeConfigs = [
       if (hasPageSwitch) {
         // 面板切换时，只更新当前聚焦面板的显示，保持其他面板的显示状态
         this.updateCurrentPanelDisplay()
-      }
+      }      },
     })
-    
-    // 尝试监听指定的页面切换元素
-    const pageSwitchElement = document.querySelector("#main > div > div.orca-panel.active > div:nth-child(3)")
-    if (pageSwitchElement) {
-      this.observer.observe(pageSwitchElement, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['class', 'id']
-      })
-    } else {
-      // 如果找不到指定元素，回退到监听整个文档
-    this.observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-        attributes: true,
-        attributeFilter: ['class', 'id']
-      })
-    }
-    
+
     // 启动定期检查，确保页面切换时能及时更新
     this.startPageSwitchCheck()
   }
@@ -10064,7 +10067,14 @@ const typeConfigs = [
       this.tagHierarchyObserver.disconnect()
     }
 
-    this.tagHierarchyObserver = new MutationObserver((mutations) => {
+    // 只观察面板容器（不再观察 document.body），回调逻辑保持原样
+    this.tagHierarchyWatch = domLifecycle.watch({
+      name: 'pagedisplay.taghierarchy',
+      resolve: () => panelsContainer(),
+      options: { childList: true, subtree: true },
+      filter: (mutation) =>
+        [...mutation.addedNodes].some((node) => node.nodeType === 1 && isPanelish(node)),
+      handler: (mutations) => {
       let shouldUpdate = false
 
       mutations.forEach((mutation) => {
@@ -10087,17 +10097,7 @@ const typeConfigs = [
           this.log('DOM变化触发显示更新')
           await this.updateDisplay()
         }, 100)
-      }
-    })
-
-    if (!document.body) {
-      return
-    }
-
-    this.tagHierarchyObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: false
+      }      },
     })
 
     this.log('DOM观察器已启动')
